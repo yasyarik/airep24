@@ -43,24 +43,24 @@ export const loader = async ({ request }) => {
 
     // If no stats yet, fetch initial counts
     if (!stats) {
+      console.log("[DASHBOARD] Fetching initial stats from Shopify...");
       const response = await admin.graphql(
         `#graphql
         query getStoreStats {
           productsCount { count }
           collectionsCount { count }
-          priceRules(first: 1) { totalCount }
-          articles(first: 1) { totalCount }
-          pages(first: 1) { totalCount }
           shop { shipsToCountries }
         }`
       );
       const result = await response.json();
+      console.log("[DASHBOARD] GraphQL Result:", JSON.stringify(result));
+
       stats = {
         products: result.data?.productsCount?.count || 0,
         collections: result.data?.collectionsCount?.count || 0,
-        discounts: result.data?.priceRules?.totalCount || 0,
-        articles: result.data?.articles?.totalCount || 0,
-        pages: result.data?.pages?.totalCount || 0,
+        discounts: 0,
+        articles: 0,
+        pages: 0,
         policies: 4,
         shippingCountries: result.data?.shop?.shipsToCountries?.length || 0,
         lastIndexed: null
