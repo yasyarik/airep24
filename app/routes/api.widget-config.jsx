@@ -25,6 +25,22 @@ export const loader = async ({ request }) => {
     // Replace {name} in welcome message
     const welcomeMessage = activeProfile.welcomeMessage.replace('{name}', activeProfile.name);
 
+    // Parse animation config
+    let frames = [];
+    let animationSpeed = 500;
+
+    try {
+        if (activeProfile.animationConfig) {
+            const config = JSON.parse(activeProfile.animationConfig);
+            if (config.idle) {
+                frames = config.idle.frames || [];
+                animationSpeed = config.idle.speed || 500;
+            }
+        }
+    } catch (e) {
+        console.error("Failed to parse animation config", e);
+    }
+
     return {
         enabled: widgetConfig.enabled,
         config: {
@@ -42,15 +58,8 @@ export const loader = async ({ request }) => {
             role: activeProfile.role,
             avatarType: activeProfile.avatarType,
             avatarId: activeProfile.avatarId,
-            frames: {
-                url1: activeProfile.avatarUrl,
-                url2: activeProfile.avatarUrl2,
-                url3: activeProfile.avatarUrl3,
-                svg1: activeProfile.avatarSvg,
-                svg2: activeProfile.avatarSvg2,
-                svg3: activeProfile.avatarSvg3
-            },
-            animationSpeed: activeProfile.animationSpeed || 500,
+            frames: frames,
+            animationSpeed: animationSpeed,
             welcomeMessage: welcomeMessage
         }
     };

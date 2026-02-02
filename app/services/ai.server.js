@@ -391,3 +391,63 @@ export async function generateImageFromPrompt(prompt) {
         throw new Error(`Failed to generate image: ${error.message} `);
     }
 }
+
+export async function generateChatResponse(history, systemPrompt, tools = []) {
+    console.log("=== Generating Chat Response ===");
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) throw new Error("API Key missing");
+
+    try {
+        const ai = new GoogleGenAI({ apiKey });
+        const modelName = "gemini-1.5-flash"; // Fast and capable
+
+        // Convert history to Gemini format
+        // history: [{ role: 'user'|'assistant', content: 'text' }]
+        const contents = history.map(h => ({
+            role: h.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: h.content }]
+        }));
+
+        const body = {
+            model: modelName,
+            contents: contents,
+            systemInstruction: {
+                parts: [{ text: systemPrompt }]
+            },
+            generationConfig: {
+                maxOutputTokens: 1000,
+            }
+        };
+
+        if (tools && tools.length > 0) {
+            body.tools = [{ functionDeclarations: tools }];
+        }
+
+        const response = await ai.models.generateContent(body);
+
+        // Check for function calls
+        const candidate = response.candidates[0];
+        const parts = candidate.content.parts;
+
+        let functionCalls = [];
+        let textResponse = "";
+
+        for (const part of parts) {
+            if (part.functionCall) {
+                functionCalls.push(part.functionCall);
+            }
+            if (part.text) {
+                textResponse += part.text;
+            }
+        }
+
+        return {
+            text: textResponse,
+            functionCalls: functionCalls.length > 0 ? functionCalls : null
+        };
+
+    } catch (error) {
+        console.error("Chat Generation Error:", error);
+        throw error;
+    }
+}

@@ -1,6 +1,6 @@
 {% schema %}
 {
-  "name": "AiRep24 Widget",
+  "name": "AiRep24 Chat",
   "target": "body",
   "settings": []
 }
@@ -9,9 +9,39 @@
 <div id="airep24-root"></div>
 
 <style>
-  #airep24-widget-container {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+  #airep24-root {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    z-index: 999999;
+    position: fixed;
+    pointer-events: none;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 0;
+    overflow: visible;
   }
+
+  /* Launcher */
+  #airep24-launcher {
+    position: fixed;
+    bottom: 20px;
+    right: 20px; /* Default, overridden by JS */
+    cursor: pointer;
+    pointer-events: auto;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 18px;
+    border-radius: 30px;
+    border: none;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  }
+  #airep24-launcher:hover { transform: translateY(-2px); }
+
   .airep24-avatar-container {
     width: 36px;
     height: 36px;
@@ -19,120 +49,301 @@
     overflow: hidden;
     position: relative;
     background: rgba(255,255,255,0.2);
+    flex-shrink: 0;
   }
   .airep24-avatar-frame {
     position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+    top: 0; left: 0; width: 100%; height: 100%;
     opacity: 0;
     transition: opacity 0.2s;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .airep24-avatar-frame.active { opacity: 1; }
+  .airep24-avatar-frame img { width: 100%; height: 100%; object-fit: cover; }
+  
+  #airep24-launcher-text { font-weight: 600; font-size: 14px; color: white; }
+
+  /* Chat Window */
+  #airep24-window {
+    position: fixed;
+    bottom: 80px;
+    right: 20px;
+    width: 380px;
+    height: 600px;
+    max-height: 80vh;
+    background: #ffffff;
+    border-radius: 20px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.15);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid #eee;
+  }
+  #airep24-window.active {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    pointer-events: auto;
+  }
+  
+  /* Header */
+  #airep24-header {
+    padding: 16px;
+    background: var(--primary-color, #000);
+    color: white;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
   }
-  .airep24-avatar-frame.active {
-    opacity: 1;
+  .airep24-header-info { display: flex; align-items: center; gap: 10px; }
+  .airep24-status-dot { width: 8px; height: 8px; background: #4ade80; border-radius: 50%; }
+  #airep24-close { cursor: pointer; padding: 4px; opacity: 0.8; }
+  #airep24-close:hover { opacity: 1; }
+
+  /* Messages */
+  #airep24-messages {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: #f8fafc;
   }
-  .airep24-avatar-frame svg, .airep24-avatar-frame img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+  .airep24-msg {
+    max-width: 85%;
+    padding: 10px 14px;
+    border-radius: 16px;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .airep24-msg-user {
+    align-self: flex-end;
+    background: var(--primary-color, #000);
+    color: white;
+    border-bottom-right-radius: 4px;
+  }
+  .airep24-msg-assistant {
+    align-self: flex-start;
+    background: white;
+    color: #1e293b;
+    border: 1px solid #e2e8f0;
+    border-bottom-left-radius: 4px;
+  }
+
+  /* Input */
+  #airep24-input-area {
+    padding: 12px;
+    border-top: 1px solid #eee;
+    background: white;
+    display: flex;
+    gap: 8px;
+  }
+  #airep24-input {
+    flex: 1;
+    padding: 10px 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    outline: none;
+    font-size: 14px;
+  }
+  #airep24-input:focus { border-color: var(--primary-color, #000); }
+  #airep24-send {
+    background: var(--primary-color, #000);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 38px; height: 38px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* Mobile */
+  @media (max-width: 480px) {
+    #airep24-window { width: calc(100% - 32px); height: 70vh; right: 16px; bottom: 80px; }
   }
 </style>
 
 <script>
   (function() {
-    const shop = "{{ shop.permanent_domain }}";
-    const apiUrl = "https://app.airep24.com/api/widget-config?shop=" + shop;
+    const SHOP_DOMAIN = "{{ shop.permanent_domain }}";
+    // const API_BASE = "https://app.airep24.com"; // Production
+    const API_BASE = "https://app.airep24.com"; // Should match your server
+    // Note: During dev, you might need tunnel URL. But assume deployment URL for now.
+    
+    // Config Endpoint
+    const CONFIG_URL = `${API_BASE}/api/widget-config?shop=${SHOP_DOMAIN}`;
+    // Chat Endpoint
+    const CHAT_URL = `${API_BASE}/api/chat`;
 
-    fetch(apiUrl)
+    fetch(CONFIG_URL)
       .then(res => res.json())
       .then(data => {
         if (data.enabled) {
-          initAiRep24Widget(data);
+          initWidget(data);
         }
       })
       .catch(err => console.error("AiRep24 Error:", err));
 
-    function initAiRep24Widget(data) {
-      const root = document.getElementById('airep24-root');
+    function initWidget(data) {
       const config = data.config;
       const char = data.character;
+      const root = document.getElementById('airep24-root');
 
-      const widget = document.createElement('div');
-      widget.id = 'airep24-widget-container';
-      widget.style.position = 'fixed';
-      widget.style.bottom = '20px';
-      widget.style[config.position.split('-')[1]] = '20px';
-      widget.style.zIndex = '999999';
+      // Styles
+      root.style.setProperty('--primary-color', config.primaryColor);
 
-      const button = document.createElement('button');
-      button.style.backgroundColor = config.primaryColor;
-      button.style.color = 'white';
-      button.style.border = 'none';
-      button.style.borderRadius = config.borderRadius + 'px';
-      button.style.padding = '10px 18px';
-      button.style.cursor = 'pointer';
-      button.style.display = 'flex';
-      button.style.alignItems = 'center';
-      button.style.gap = '12px';
-      button.style.boxShadow = config.shadow ? '0 6px 16px rgba(0,0,0,0.15)' : 'none';
-      button.style.opacity = config.opacity / 100;
-
-      // Avatar with 3 frames
-      const avatarContainer = document.createElement('div');
-      avatarContainer.className = 'airep24-avatar-container';
-      
-      const frames = [];
-      for (let i = 1; i <= 3; i++) {
-        const frameDiv = document.createElement('div');
-        frameDiv.className = 'airep24-avatar-frame' + (i === 1 ? ' active' : '');
+      // DOM Structure
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = `
+        <div id="airep24-launcher" style="background-color: ${config.primaryColor}; ${config.position.split('-')[1]}: 20px;">
+           <div class="airep24-avatar-container" id="airep24-avatar"></div>
+           <span id="airep24-launcher-text">${char.name}</span>
+        </div>
         
-        let content = '';
-        if (char.avatarType === 'preset') {
-          // For presets we assume assets path: assets/presets/idI.svg
-          // But since Liquid can't dynamic assets easily, we'll use our API or a generic path
-          // For now, let's use a placeholder or the SVG if we had it in DB
-          // Actually, our API returns frames.svg1 etc if custom.
-          // For presets, let's assume they are in theme assets/airep24-id-i.svg
-          const assetName = 'airep24-' + char.avatarId + i + '.svg';
-          content = `<img src="https://cdn.shopify.com/s/files/1/0000/0000/t/1/assets/${assetName}" onerror="this.parentElement.innerHTML='<svg viewBox=\'0 0 100 100\'><circle cx=\'50\' cy=\'50\' r=\'40\' fill=\'white\' opacity=\'0.3\'/></svg>'">`;
-        } else if (char.avatarType === 'image') {
-          const url = char.frames['url' + i] || char.frames.url1;
-          content = `<img src="${url}">`;
-        } else if (char.avatarType === 'svg') {
-          const svg = char.frames['svg' + i] || char.frames.svg1;
-          content = svg;
-        }
+        <div id="airep24-window" style="${config.position.split('-')[1]}: 20px;">
+           <div id="airep24-header">
+             <div class="airep24-header-info">
+               <div style="font-weight:700">${char.name}</div>
+               <div class="airep24-status-dot"></div>
+             </div>
+             <div id="airep24-close">✕</div>
+           </div>
+           <div id="airep24-messages">
+             <div class="airep24-msg airep24-msg-assistant">
+                ${char.welcomeMessage || "Hi! How can I help you today?"}
+             </div>
+           </div>
+           <div id="airep24-input-area">
+             <input type="text" id="airep24-input" placeholder="Type a message..." />
+             <button id="airep24-send">
+               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+             </button>
+           </div>
+        </div>
+      `;
+      root.appendChild(wrapper);
 
-        frameDiv.innerHTML = content;
-        avatarContainer.appendChild(frameDiv);
-        frames.push(frameDiv);
+      // Avatar Animation
+      const avatarContainer = document.getElementById('airep24-avatar');
+      const frames = [];
+      
+      // Determine frames
+      let frameUrls = [];
+      if (char.avatarType === 'preset') {
+         // Fallback/Preset logic
+         // Since we don't have asset paths client-side easily, use chars name?
+         // For now, assume placeholders if custom frames not served.
+         // Better: The API should return full URLs for preset frames too!
+         if (char.frames && char.frames.length) frameUrls = char.frames; 
+      } else {
+         if (char.frames && char.frames.length) frameUrls = char.frames;
+      }
+      // If no provided frames, use placeholders
+      if (!frameUrls.length) frameUrls = ["https://placehold.co/100x100/png?text=1", "https://placehold.co/100x100/png?text=2"];
+
+      // Simplify: Just use 3 frames max loop
+      frameUrls.slice(0,3).forEach((url, i) => {
+         const img = document.createElement('img');
+         img.src = url;
+         const div = document.createElement('div');
+         div.className = `airep24-avatar-frame ${i===0?'active':''}`;
+         div.appendChild(img);
+         avatarContainer.appendChild(div);
+         frames.push(div);
+      });
+
+      if (frames.length > 1) {
+          let currentFrame = 0;
+          setInterval(() => {
+             frames[currentFrame].classList.remove('active');
+             currentFrame = (currentFrame + 1) % frames.length;
+             frames[currentFrame].classList.add('active');
+          }, char.animationSpeed || 500);
       }
 
-      // Animation logic
-      let currentFrame = 0;
-      setInterval(() => {
-        frames[currentFrame].classList.remove('active');
-        currentFrame = (currentFrame + 1) % 3;
-        frames[currentFrame].classList.add('active');
-      }, char.animationSpeed || 500);
+      // Logic
+      const launcher = document.getElementById('airep24-launcher');
+      const win = document.getElementById('airep24-window');
+      const close = document.getElementById('airep24-close');
+      const input = document.getElementById('airep24-input');
+      const sendBtn = document.getElementById('airep24-send');
+      const messagesDiv = document.getElementById('airep24-messages');
+      
+      let isOpen = false;
+      let history = [{role: 'assistant', content: char.welcomeMessage || "Hi!"}];
 
-      const text = document.createElement('span');
-      text.style.fontWeight = '600';
-      text.style.fontSize = '14px';
-      text.innerText = char.name;
+      function toggle() {
+         isOpen = !isOpen;
+         win.classList.toggle('active', isOpen);
+         if (isOpen) input.focus();
+      }
 
-      button.appendChild(avatarContainer);
-      button.appendChild(text);
-      widget.appendChild(button);
-      root.appendChild(widget);
+      launcher.onclick = toggle;
+      close.onclick = (e) => { e.stopPropagation(); toggle(); };
+      
+      function addMessage(role, text) {
+         const div = document.createElement('div');
+         div.className = `airep24-msg airep24-msg-${role}`;
+         div.innerText = text;
+         messagesDiv.appendChild(div);
+         messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      }
 
-      button.onclick = () => {
-        alert(char.welcomeMessage);
-      };
+      async function sendMessage() {
+         const text = input.value.trim();
+         if (!text) return;
+
+         input.value = '';
+         addMessage('user', text);
+         history.push({role: 'user', content: text});
+         
+         // Call API
+         try {
+             const res = await fetch(CHAT_URL, {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({
+                     shop: SHOP_DOMAIN,
+                     messages: history,
+                     currentPath: window.location.pathname
+                 })
+             });
+             
+             if (!res.ok) throw new Error("Connection failed");
+             
+             // Stream Reader
+             const reader = res.body.getReader();
+             const decoder = new TextDecoder();
+             let assistantMsg = "";
+             
+             // Create response bubble
+             const msgDiv = document.createElement('div');
+             msgDiv.className = 'airep24-msg airep24-msg-assistant';
+             messagesDiv.appendChild(msgDiv);
+             
+             while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                assistantMsg += chunk;
+                msgDiv.innerHTML = assistantMsg.replace(/\n/g, '<br>'); // Basic formatting
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+             }
+             
+             history.push({role: 'assistant', content: assistantMsg});
+             
+         } catch (e) {
+             addMessage('assistant', "Sorry, I'm having trouble connecting right now.");
+             console.error(e);
+         }
+      }
+
+      sendBtn.onclick = sendMessage;
+      input.onkeypress = (e) => { if (e.key === 'Enter') sendMessage(); }
     }
   })();
 </script>
