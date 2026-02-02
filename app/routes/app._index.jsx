@@ -40,8 +40,7 @@ import { indexStoreData } from "../services/indexer.server";
 export const loader = async ({ request }) => {
   try {
     const { admin, session } = await authenticate.admin(request);
-    console.log("Admin object type:", typeof admin);
-    console.log("Admin object props:", Object.getOwnPropertyNames(admin));
+    console.log("WHO IS ADMIN?:", Object.keys(admin));
     if (admin && admin.rest) {
       console.log("Admin REST resources:", Object.keys(admin.rest.resources || {}));
     } else {
