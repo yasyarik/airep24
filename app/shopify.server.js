@@ -8,11 +8,14 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 
+import { restResources } from "@shopify/shopify-api/rest/admin/2025-10";
+
 // Plan names
 export const PLAN_GROWTH = "Growth Plan";
 export const PLAN_SCALE = "Scale Plan";
 
 const shopify = shopifyApp({
+  restResources,
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
   apiVersion: ApiVersion.October25,
