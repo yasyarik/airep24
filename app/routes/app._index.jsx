@@ -180,6 +180,7 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
+  console.log("DEBUG: ACTION START", request.url, request.method);
   try {
     const { admin, session } = await authenticate.admin(request);
 
