@@ -19,9 +19,11 @@ export const loader = async ({ request }) => {
     });
 
     if (!widgetConfig || !activeProfile) {
-        // Fallback or disabled state
         return { enabled: false };
     }
+
+    // Replace {name} in welcome message
+    const welcomeMessage = activeProfile.welcomeMessage.replace('{name}', activeProfile.name);
 
     return {
         enabled: widgetConfig.enabled,
@@ -40,9 +42,16 @@ export const loader = async ({ request }) => {
             role: activeProfile.role,
             avatarType: activeProfile.avatarType,
             avatarId: activeProfile.avatarId,
-            avatarUrl: activeProfile.avatarUrl,
-            avatarSvg: activeProfile.avatarSvg,
-            welcomeMessage: activeProfile.welcomeMessage
+            frames: {
+                url1: activeProfile.avatarUrl,
+                url2: activeProfile.avatarUrl2,
+                url3: activeProfile.avatarUrl3,
+                svg1: activeProfile.avatarSvg,
+                svg2: activeProfile.avatarSvg2,
+                svg3: activeProfile.avatarSvg3
+            },
+            animationSpeed: activeProfile.animationSpeed || 500,
+            welcomeMessage: welcomeMessage
         }
     };
 };
