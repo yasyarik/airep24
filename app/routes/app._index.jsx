@@ -18,24 +18,17 @@ import {
   Tabs,
   Divider,
   FormLayout,
-  SegmentedControl,
   RangeSlider,
   Checkbox,
   Modal,
   DropZone,
-  Scrollable,
-  Grid as PolarisGrid
 } from "@shopify/polaris";
 import {
   ChatIcon,
   PersonIcon,
   PlusIcon,
-  EditIcon,
-  SaveIcon,
   DeleteIcon,
   ViewIcon,
-  CheckIcon,
-  ImageIcon
 } from "@shopify/polaris-icons";
 
 // Loader: Discover presets and load profiles with assets
