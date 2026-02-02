@@ -3,7 +3,7 @@ import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
 import enTranslations from "@shopify/polaris/locales/en.json";
-import polarisStyles from "@shopify/polaris/build/styles.css?url";
+import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 
 export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
