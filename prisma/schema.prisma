@@ -127,5 +127,6 @@ model StoreStats {
   articles     Int      @default(0)
   pages        Int      @default(0)
   policies     Int      @default(0)
+  autoSync     Boolean  @default(true)
   lastIndexed  DateTime @default(now())
 }

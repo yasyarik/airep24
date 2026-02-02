@@ -48,6 +48,7 @@ export const loader = async ({ request }) => {
         articles: dbStats.articles,
         pages: dbStats.pages,
         policies: dbStats.policies,
+        autoSync: dbStats.autoSync,
         shippingCountries: 0,
         lastIndexed: dbStats.lastIndexed ? dbStats.lastIndexed.toISOString() : null
       };
@@ -70,6 +71,7 @@ export const loader = async ({ request }) => {
         articles: 0,
         pages: 0,
         policies: 4,
+        autoSync: true,
         shippingCountries: result.data?.shop?.shipsToCountries?.length || 0,
         lastIndexed: null
       };
@@ -106,6 +108,16 @@ export const action = async ({ request }) => {
       const result = await indexStoreData(admin, session.shop, prisma);
       return { success: result.success, message: result.success ? "Successfully indexed store data!" : "Indexing failed." };
     }
+
+    if (intent === "toggleAutoSync") {
+      const current = formData.get("current") === "true";
+      await prisma.storeStats.update({
+        where: { shopDomain: session.shop },
+        data: { autoSync: !current }
+      });
+      return { success: true };
+    }
+
     return null;
   } catch (error) {
     console.error("[ACTION ERROR]:", error);
@@ -312,6 +324,41 @@ export default function Index() {
                   </Box>
 
                   <Divider />
+
+                  <InlineStack align="space-between" blockAlign="center">
+                    <Text variant="bodyMd" as="p">Daily auto-update</Text>
+                    <fetcher.Form method="post">
+                      <input type="hidden" name="intent" value="toggleAutoSync" />
+                      <input type="hidden" name="current" value={String(stats.autoSync)} />
+                      <button
+                        type="submit"
+                        style={{
+                          width: '40px',
+                          height: '24px',
+                          borderRadius: '12px',
+                          backgroundColor: stats.autoSync ? '#008060' : '#e1e3e5',
+                          border: 'none',
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'background-color 0.2s'
+                        }}
+                      >
+                        <div style={{
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '50%',
+                          backgroundColor: 'white',
+                          position: 'absolute',
+                          top: '3px',
+                          left: stats.autoSync ? '19px' : '3px',
+                          transition: 'left 0.2s'
+                        }} />
+                      </button>
+                    </fetcher.Form>
+                  </InlineStack>
+
+                  <Divider />
+
                   <fetcher.Form method="post">
                     <input type="hidden" name="intent" value="index" />
                     <Button
@@ -324,10 +371,13 @@ export default function Index() {
                       {stats.lastIndexed ? "Refresh Knowledge Base" : "Start Initial Indexing"}
                     </Button>
                   </fetcher.Form>
+
                   {stats.lastIndexed && (
-                    <Text variant="bodyXs" tone="subdued" alignment="center">
-                      Last indexed: {new Date(stats.lastIndexed).toLocaleString()}
-                    </Text>
+                    <BlockStack gap="100" align="center">
+                      <Text variant="bodyXs" tone="subdued" alignment="center">
+                        Last Sync: {new Date(stats.lastIndexed).toLocaleDateString()} at {new Date(stats.lastIndexed).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                    </BlockStack>
                   )}
                 </BlockStack>
               </Card>
