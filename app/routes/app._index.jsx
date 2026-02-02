@@ -278,6 +278,7 @@ export const action = async ({ request }) => {
     }
 
     if (intent === "index") {
+      console.log("DEBUG: Calling indexStoreData with admin type:", typeof admin, "and shop:", session.shop);
       const result = await indexStoreData(admin, session.shop, prisma);
       return { success: result.success, indexResult: result };
     }
