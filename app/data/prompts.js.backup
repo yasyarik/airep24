@@ -1,0 +1,451 @@
+export const CLOTHING_ANGLE_PROMPTS = [
+    'SCENE_TYPE: "The Frontal Interaction". ACTION: Dynamic frontal stance. The model is leaning slightly against a background element (wall or furniture if present). WEIGHT: Shifted to one hip. GAZE: Direct engaging eye contact.',
+    'SCENE_TYPE: "The Side Profile". ACTION: 45-degree body turn. Standing stable and grounded. One hand resting on a background table or chair if available, or on own hip. WEIGHT: Both feet firmly on the floor plane. GAZE: Profile or looking over shoulder.',
+    'SCENE_TYPE: "The Back View". ACTION: Model facing away from camera, looking back over the shoulder. Feet firmly planted on the floor plane. The model stands in an open area of the scene, not clipping through large objects. GAZE: Engaging gaze towards the lens.'
+];
+
+export const ITEM_ANGLE_PROMPTS = [
+    // RAKURS 0: PRESENTATION
+    `SCENE_TYPE: "The Hero Shot".
+    ADAPTIVE_DISPLAY: 
+      - IF [Small: Watch, Jewelry, Phone]: CHEST-UP SHOT. Worn on wrist or held at chest level. NO LEGS.
+      - IF [Standard: Bottle, Shaker]: WAIST-UP SHOT. Held elegantly.
+      - IF [Large: Bag, Weapon, Umbrella]: FULL-BODY/KNEE-UP. Full scale visibility.
+    ACTION: Professional presentation. The model looks into the lens.
+    HANDS: Pedestal Grip or natural wear. STRICT: NO FINGERS OVER THE LABEL/LOGO.`,
+
+    // RAKURS 1: ACTION
+    `SCENE_TYPE: "Interaction & Process".
+    SHOT_TYPE:
+      - IF [Small/Medium]: CHEST-UP CLOSE-UP. Focus on interaction zone.
+      - IF [Large]: KNEE-UP VERTICAL SHOT.
+    ACTION: Active usage (Pouring, applying, checking time, carrying).
+    STATE: If the action involves contents, the CAP IS REMOVED.
+    HANDS: Dynamic tension. Hand A supports, Hand B interacts with the target.`,
+
+    // RAKURS 2: MACRO
+    `SCENE_TYPE: "The Detailed Macro".
+    ZOOM: Extreme close-up. The product and interaction point fill 90% of the frame.
+    OPTICAL_STYLE: DSLR Photography style. Natural depth of field with soft bokeh. Background elements are out of focus but maintain their basic lighting structure.
+    SHOT_TYPE: Tight crop. Focus on detail.
+    ACTION: Product is in active use or being handled.
+      - Skincare: Focus on texture of product on skin.
+      - Beverage: Focus on droplets or glass rim.
+      - Watch: Tack-sharp focus on the dial or strap texture.
+      - General: Hero detail is the absolute focus.
+    EMOTION: Sensory enjoyment.
+    FOCUS: Razor-sharp focus only on the primary point of contact.`
+];
+
+export const STILL_LIFE_ANGLE_PROMPTS = [
+    'EYE-LEVEL FRONT VIEW: The camera is positioned directly in front of the product at eye-level. Perfectly balanced horizontal alignment.',
+    'ELEVATED 45-DEGREE OVERHEAD VIEW: The camera is high, looking DOWN at the product from a 45-degree angle to show the top surfaces clearly.',
+    'DRAMATIC LOW-ANGLE WORM-EYE VIEW: The camera is placed very low, looking UP at the product to give it a sense of grand scale and power.'
+];
+
+export const ASPECT_RATIO_HEADER = `
+[STRICT COMPOSITION]
+- FORMAT: Cinematic 9:16 Vertical.
+- MANDATE: Full-height portrait orientation. 
+- COMPOSITION: The scene must fill the entire canvas top-to-bottom.
+`.trim();
+
+export const generateClothingPrompt = (productTitle, angleVariation, locationPrompt = '', hasLocationImage = false, seed = 0, genSettings = {}) => {
+    const { emotion = 'auto', makeup = 'auto', eyewear = 'auto', jewelry = 'auto', pose = 'auto', cameraAngle = 'auto', notes = '' } = genSettings;
+
+    const emotionMap = {
+        'smile': 'Expression: Warm genuine smile.',
+        'laugh': 'Expression: Joyful natural laugh.',
+        'serious': 'Expression: Determined focused professional look.',
+        'angry': 'Expression: Intense serious firm look.',
+        'flirty': 'Expression: Playful confident with slight smile.',
+        'emotional': 'Expression: Soft vulnerable expressive emotional look.',
+        'neutral': 'Expression: Calm neutral expression.',
+        'auto': ''
+    };
+
+    const makeupMap = {
+        'no-makeup': 'Grooming: No makeup, natural bare skin.',
+        'natural': 'Grooming: Natural daily makeup, fresh face.',
+        'glam': 'Grooming: Heavy glam makeup, bold features.',
+        'auto': ''
+    };
+
+    const accessories = [];
+    if (eyewear === 'glasses') accessories.push('wearing prescription glasses');
+    if (eyewear === 'sunglasses') accessories.push('wearing stylish sunglasses');
+    if (jewelry === 'minimal') accessories.push('minimal delicate jewelry');
+    if (jewelry === 'statement') accessories.push('bold statement jewelry');
+    const accText = accessories.length > 0 ? `Accessories: ${accessories.join(', ')}.` : '';
+
+    const poseMap = {
+        'editorial': 'Editorial fashion stance, sophisticated angles.',
+        'casual': 'Effortless candid relaxation, natural lines.',
+        'expressive': 'High-energy dynamic movement, expressive limbs.',
+        'sporty': 'Powerful athletic tension, active posture.',
+        'cute': 'Playful charming attitude, soft curves.',
+        'meditative': 'Zen-like stillness, balanced harmonious lines.',
+        'auto': ''
+    };
+
+    const angleMap = {
+        '30': 'Camera: 30-degree angle.',
+        '60': 'Camera: 60-degree angle.',
+        '90': 'Camera: 90-degree side profile.',
+        '180': 'Camera: 180-degree back view.',
+        'auto': ''
+    };
+
+    const styling = [emotionMap[emotion], makeupMap[makeup], accText, poseMap[pose], angleMap[cameraAngle]].filter(Boolean).join(' ');
+
+    return `
+${ASPECT_RATIO_HEADER}
+/// MASTER CLOTHING COMPOSITOR v7: FURNITURE & PERSPECTIVE LOCK ///
+[STRICT DIMENSIONS]
+- ASPECT RATIO: 9:16 Vertical (Story Format).
+- ORIENTATION: Portrait Only.
+- MANDATE: The entire scene, including any generated background, MUST be vertical.
+- RATIO LOCK: DO NOT match the aspect ratio of Image 1 or Image 2. Output MUST be 1080x1920 (9:16).
+- [VARIETY SEED]: ${seed}
+
+[INPUTS]
+- IDENTITY: Face and Hair from IMAGE 1.
+- PRODUCT: Clothing from IMAGE 2 ("${productTitle}").
+- BACKGROUND: ${hasLocationImage ? 'USE IMAGE 3 AS THE ABSOLUTE BACKGROUND.' : `GENERATE A NEW BACKGROUND: "${locationPrompt || 'Elegant e-commerce studio background'}". MUST BE VERTICAL 9:16.`}
+
+[STYLING & PERSONALITY]
+- ${styling || 'Natural professional appearance.'}
+${notes ? `- ADDITIONAL DETAILS: ${notes}` : ''}
+
+[STEP 1: OUTFIT RECONSTRUCTION & ANTI-LAZINESS]
+1.  ZERO PIXEL REUSE: REDRAW the model's body, skin, and clothing from scratch in the new pose. 
+2.  OUTFIT COMPLETION:
+    - IF upper garment: Generate matching high-fashion trousers/skirt.
+    - IF lower garment: Generate matching high-fashion top.
+
+[STEP 2: GEOMETRY & SPACE INTERACTION]
+${hasLocationImage ? `1. MANDATORY DEPTH: Seamlessly integrate the model INTO the 3D space of IMAGE 3.
+2. CONTACT PHYSICS:
+    - FEET: Both feet MUST be firmly planted on the floor plane of IMAGE 3. ZERO GAP between shoes and floor.
+    - OBJECT COLLISION: Identify all furniture and fixtures (Tables, Chairs, Sinks, Bathtubs, Counters).
+    - NO CLIPPING: The model's body MUST NOT clip through, penetrate, or stand inside background objects. The model stands in front of or adjacent to them.
+3. PERSPECTIVE: The model's size must match the scale of the background objects (Sink/Table = Hip height, Chair/Tub = Knee height).` : `1. ENVIRONMENT DESIGN: Generate a high-fashion, high-quality VERTICAL environment around the subject.
+2. PORTRAIT PERSPECTIVE: The subject MUST be centered and grounded on a vertical floor plane.
+3. VERTICAL COMPOSITION: The background scene must be architecturally designed for the 9:16 frame. Avoid wide horizontals.`}
+
+[STEP 3: FRAMING & ANATOMY]
+1.  ${angleVariation}
+2.  PROXIMITY: Model must occupy 85-90% of the vertical frame.
+3.  VERTICALITY: Mandatory vertical 9:16 framing. ${hasLocationImage ? 'If IMAGE 3 is horizontal, crop it to the center to fit the 9:16 mandate.' : 'Render the new background strictly in 9:16 portrait mode.'}
+4.  NO HORIZONTAL LEAKAGE: There must be ZERO horizontal white space or landscape-style framing. The composition must be inherently vertical.
+
+[STEP 4: RENDER & LIGHTING]
+- LIGHTING SOURCE: Derived exclusively from ${hasLocationImage ? 'IMAGE 3' : 'the new background'}.
+- SHADOWS: Cast accurate contact shadows on the floor and supporting furniture.
+- TEXTURE: 8k photorealistic texture fidelity.
+
+[NEGATIVE PROMPT]
+(landscape), (wide shot), (horizontal), (16:9), (4:3), (square), **gray wall**, **plain background**, **boring background**, **flat lighting**, de-focused face, blurry product, messy edges, studio equipment.
+`.trim();
+};
+
+export const generateItemPrompt = (product, angleVariation, locationPrompt, seed, angleIndex = 0, hasLocationImage = false, genSettings = {}) => {
+    const category = (product.category || product.productCategory || '').toLowerCase();
+    const title = (product.title || '').toLowerCase();
+    const { emotion = 'auto', makeup = 'auto', eyewear = 'auto', jewelry = 'auto', pose = 'auto', cameraAngle = 'auto', productAction = 'interaction', notes = '' } = genSettings;
+
+    const emotionMap = {
+        'smile': 'Expression: Warm genuine smile.',
+        'laugh': 'Expression: Joyful natural laugh.',
+        'serious': 'Expression: Determined focused professional look.',
+        'angry': 'Expression: Intense serious firm look.',
+        'flirty': 'Expression: Playful confident with slight smile.',
+        'emotional': 'Expression: Soft vulnerable expressive emotional look.',
+        'neutral': 'Expression: Calm neutral expression.',
+        'auto': ''
+    };
+
+    const actionMap = {
+        'interaction': 'The model is interacting with the product in a lifestyle/usage scenario.',
+        'demonstrate': 'The model is presenting or demonstrating the product clearly to the camera.'
+    };
+
+    // 1. Adaptive Lighting Setup
+    const lightingPrompt = hasLocationImage
+        ? `LIGHTING: MATCH the lighting of Background Image 3 perfectly. Use its shadows and highlights as the master template.`
+        : (locationPrompt
+            ? `LIGHTING: Match the natural atmosphere of "${locationPrompt}".`
+            : `LIGHTING: High-quality professional studio lighting. Neutral balance.`);
+
+    // 2. Logic scale
+    const isSmall = /watch|jewelry|ring|earring|phone|cosmetic|lipstick|cream|glass|bottle/.test(category + title);
+    const isLarge = /bag|suitcase|sword|saber|bow|umbrella|equipment/.test(category + title);
+
+    const distanceMandate = isSmall
+        ? "STRICT DISTANCE: Medium Close-up. The camera is prohibited from showing legs, feet, or shoes. Only head and torso."
+        : "STRICT DISTANCE: Full-body or Knee-up. Show the entire scale of the product.";
+
+    const styling = emotionMap[emotion] || '';
+
+    return `
+/// GEMINI 2.5 FLASH: ADAPTIVE VERTICAL GENERATION ///
+${ASPECT_RATIO_HEADER}
+
+**CRITICAL: VERTICAL CANVAS FILL**
+Generate a rich, immersive 9:16 scene that extends to all four edges of the frame.
+The background must bleed into the boundaries of the vertical frame.
+If generating background automatically, ensure it occupies 100% of the vertical canvas.
+
+[INPUTS]
+- IDENTITY: Face/Hair from Image 1.
+- PRODUCT: Image 2 ("${product.title}"). Category: ${category}.
+- BG: ${hasLocationImage ? 'Use Image 3.' : `GENERATE RICH CONTEXTUAL BACKGROUND in 9:16 based on: "${locationPrompt || 'Elegant e-commerce studio context'}". NO GRAY WALLS. NO PLAIN BACKGROUNDS.`}
+
+[STYLING & ACTION]
+- ${styling || 'Natural professional appearance.'}
+- ${actionMap[productAction] || ''}
+${notes ? `- ADDITIONAL DETAILS: ${notes}` : ''}
+
+--- UNIVERSAL RULES ---
+
+**RULE 1: SKIN TEXTURE (CRITICAL)**
+High-fidelity photorealistic skin rendering.
+Visible pores, natural skin texture, realistic grain.
+NO airbrushing. NO plastic-looking skin. NO blur. NO smoothing filters.
+
+**RULE 2: THE BARRIER LAW (STATE)**
+If action is "Interaction" (Angle 1, 2) and product is a container:
+- The cap/lid/top MUST be removed and placed out of frame or held.
+- The nozzle/opening MUST be exposed.
+- Never show liquid or cream passing through a closed solid lid.
+
+**RULE 3: BRAND SAFETY & HANDS**
+- LABEL PROTECTION: Fingers must ONLY touch the sides or base of "${product.title}".
+- LOGOTYPE CLEARANCE: The main logo/text MUST be 100% visible and facing the camera.
+- ANATOMY: Exactly 2 hands. Realistic grip tension.
+
+**RULE 4: ADAPTIVE FRAMING**
+${distanceMandate}
+COMPOSITION: Vertical alignment. If the product is large, it must fit its entire height into the frame.
+
+[STEP 1: OUTFIT & BODY]
+- DISCARD Image 1 body. Generate NEW contextual outfit.
+- Examples: Wine -> Evening Wear. Shaker -> Fitness Wear. Watch -> Business Casual / Modern Lifestyle Wear.
+
+[STEP 2: CAMERA LOGIC]
+${angleVariation.replace('{{PRODUCT_TITLE}}', product?.title || 'item')}
+
+[STEP 3: PHOTOGRAPHIC RENDER]
+${lightingPrompt}
+**RULE 5: PHOTOGRAPHIC INTEGRITY (CRITICAL)**
+- MANDATE: The entire scene (model, product, background) MUST be rendered as a single raw photographic shot.
+- REQUIRED: Natural photographic grain (ISO noise), subtle lens imperfections, and authentic color depth.
+- PROHIBIT: Digital illustrations, 3D renders, vector lines, and airbrushed "perfect" cleanliness. 
+- DETAIL: Render micro-pores on skin, dust particles on product glass, and brushed metal textures.
+
+[NEGATIVE PROMPT]
+(illustration), (3d render), (vector), (cartoon), (CGI), (perfect smoothness), (airbrushed skin), (yellow tint), (landscape), (horizontal), (black bars).
+`.trim();
+};
+
+export const generateStillLifePrompt = (product, angleVariation, locationPrompt, seed, hasLocationImage = false) => {
+    return `
+${ASPECT_RATIO_HEADER}
+[TASK: Professional Still Life Product Placement - EXTREME CLOSE-UP]
+- OBJECTIVE: Composite the "${product.title}" from Image 1 (Product) onto the background from Image 2 (Scene).
+- CAMERA PERSPECTIVE: ${angleVariation} (MANDATORY: Render the product from this exact angle).
+- FRAMING: Use an EXTREME CLOSE-UP shot. The product is the absolute HERO.
+- SCALE: The product MUST fill the frame, occupying 80-90% of the vertical space. Minimize negative space.
+- PLACEMENT RULE: PLACE the product from Image 1 DIRECTLY ONTO the top surface of the pedestal, shelf, or platform shown in Image 2.
+- GEOMETRY & PHYSICS: 
+    1. GROUNDING: The product must SIT FIRMLY on the surface. No floating.
+    2. ZOOM: Drastically zoom in on the product to FILL the frame.
+    3. EDGE-TO-EDGE: The pedestal and background MUST touch the left and right edges of the frame. 
+    4. NO PADDING: No empty black spaces or margins allowed.
+    5. CONTACT SHADOWS: Create realistic shadow contact points between product and surface.
+    6. PERSPECTIVE: Match the camera angle defined in CAMERA PERSPECTIVE.
+- NO HUMANS: ZERO presence of people, hands, or skin.
+- BACKGROUND: ${hasLocationImage ? 'Image 2 is the MANDATORY background setup.' : (locationPrompt || 'Minimalist studio pedestal')}
+- QUALITY: Photorealistic 8k, extreme detail, 9:16 vertical. [SEED: ${seed}]
+`.trim();
+};
+
+export const generateModelPrompt = (modelParams) => {
+    // Map emotions
+    const emotionDescriptions = {
+        'neutral': 'neutral, calm expression',
+        'smiling': 'warm, genuine smile',
+        'laughing': 'joyful, natural laugh with visible happiness',
+        'flirty': 'playful, confident expression with slight smile and engaging eye contact',
+        'expressive': 'dynamic, animated expression showing strong emotion and personality'
+    };
+
+    // Map aesthetics
+    const aestheticDescriptions = {
+        'ugc-authentic': 'Authentic UGC style, natural lighting, candid feel, minimal retouching',
+        'high-fashion': 'High-end editorial fashion, glossy finish, perfect lighting, professional retouching',
+        'business-casual': 'Professional business casual look, clean and polished',
+        'athleisure': 'Active and sporty lifestyle aesthetic, dynamic and energetic'
+    };
+
+    // Map makeup
+    const makeupDescriptions = {
+        'no-makeup': 'No makeup, completely natural bare skin look',
+        'natural': 'Natural daily makeup, fresh face',
+        'glam': 'Heavy glam makeup, bold features, evening look'
+    };
+
+    // Map height
+    const heightDescriptions = {
+        'short': 'Short / Petite height (approx 160cm)',
+        'average': 'Average height (approx 170cm)',
+        'tall': 'Tall model height (approx 180cm+)'
+    };
+
+    const emotionText = emotionDescriptions[modelParams.emotion] || emotionDescriptions['neutral'];
+    const aestheticText = aestheticDescriptions[modelParams.aesthetic] || aestheticDescriptions['ugc-authentic'];
+    const makeupText = makeupDescriptions[modelParams.makeup] || makeupDescriptions['natural'];
+    const heightText = heightDescriptions[modelParams.height] || heightDescriptions['average'];
+
+    const accessoriesText = [];
+    if (modelParams.eyewear === 'glasses') accessoriesText.push('wearing prescription glasses');
+    if (modelParams.eyewear === 'sunglasses') accessoriesText.push('wearing stylish sunglasses');
+    if (modelParams.jewelry === 'minimal') accessoriesText.push('wearing minimal delicate jewelry');
+    if (modelParams.jewelry === 'statement') accessoriesText.push('wearing bold statement jewelry');
+    const accessoriesString = accessoriesText.length > 0 ? `ACCESSORIES: ${accessoriesText.join(', ')}.` : '';
+
+    const clothingDescription = modelParams.notes
+        ? modelParams.notes
+        : "The model is wearing a clean, crew-neck white t-shirt and simple, solid light-wash blue denim jeans. FOOTWEAR: Simple white sneakers.";
+
+    return `
+${ASPECT_RATIO_HEADER}
+ROLE: Commercial Fashion Photographer.
+TASK: Generate a high-resolution, photorealistic image of a single model for a catalog. 
+      
+--- MODEL IDENTITY ---
+MODEL DESCRIPTION: ${modelParams.age} ${modelParams.ethnicity} ${modelParams.gender} model. 
+PHYSICAL FEATURES: ${modelParams.hairColor} ${modelParams.hairLength} hair, ${modelParams.bodyType} body type, ${heightText}.
+STYLING: ${makeupText}. ${accessoriesString}
+EMOTION / EXPRESSION: ${emotionText}.
+
+--- AESTHETIC & VIBE ---
+STYLE: ${aestheticText}.
+
+--- UNIFORM ATTIRE ---
+CLOTHING: ${clothingDescription}
+
+--- COMPOSITION & LIGHTING ---
+BACKGROUND: Seamless, professional white studio background.
+POSE: Standing naturally, full body shot.
+FRAMING: Full body shot.
+LIGHTING: Clean, bright, Soft, Diffused Lighting (4500K). 
+
+--- NEGATIVE PROMPTS ---
+(landscape), (horizontal), (black bars), (letterbox), (padding), visible branding, tattoos, extra limbs.`;
+};
+
+export const generateLocationPrompt = (locationParams) => {
+    return `
+${ASPECT_RATIO_HEADER}
+Professional product photography background setup.
+Style: ${locationParams.setting} setting with ${locationParams.lighting} lighting, ${locationParams.style} aesthetic.
+Notes: ${locationParams.notes || 'None'}
+
+IMPORTANT: This must be a PHOTOREALISTIC background, not an illustration or 3D render.
+Requirements:
+- Real photography of actual physical space
+- Professional studio or location photography
+- Natural lighting and shadows
+- High-end commercial photography quality
+- Shot on professional DSLR camera
+- Empty background ready for product placement
+- Sharp focus, high resolution 4K
+- Clean, uncluttered composition
+
+[NEGATIVE PROMPT]
+(landscape), (horizontal), (black bars), (letterbox), (padding), (people), (hands), (skin), (products).
+`.trim();
+};
+
+const normalizeCategory = (cat) => {
+    const c = cat ? cat.toLowerCase() : 'general';
+    if (c.includes('skincare') || c.includes('beauty') || c.includes('cosmet')) return 'skincare';
+    if (c.includes('drink') || c.includes('beverag') || c.includes('bottle')) return 'drinks';
+    if (c.includes('jewel') || c.includes('watch') || c.includes('access')) return 'jewelry';
+    if (c.includes('food') || c.includes('snack') || c.includes('cook')) return 'food';
+    return 'general';
+};
+
+export const generatePlacementPrompt = (params) => {
+    const category = normalizeCategory(params.productCategory);
+    const material = params.material || 'marble';
+    const decor = params.decor || 'organic';
+    const level = params.level || 'eye-level';
+    const seed = params.seed || Math.floor(Math.random() * 1000000);
+
+    const categoryContext = {
+        'skincare': { vibe: 'minimalist and clean', bg: 'soft pastel or bright white', accent: 'glass reflections and water droplets' },
+        'drinks': { vibe: 'vibrant and refreshing', bg: 'natural outdoor or modern bar', accent: 'ice cubes and fresh citrus slices' },
+        'jewelry': { vibe: 'luxurious and high-contrast', bg: 'dark velvet or mirrors', accent: 'sharp highlights and bokeh flares' },
+        'food': { vibe: 'warm and rustic', bg: 'wooden kitchen or linen textile', accent: 'herbs and scattered ingredients' },
+        'general': { vibe: 'modern and professional', bg: 'soft-focus interior', accent: 'subtle lifestyle props' }
+    }[category];
+
+    const materialDesc = {
+        'marble': 'a smooth, polished white marble pedestal with subtle grey veining',
+        'wood': 'a natural light oak wooden platform with visible grain',
+        'concrete': 'a minimalist raw concrete slab with industrial texture',
+        'velvet': 'a luxurious soft velvet-covered jewelry stand',
+        'glass': 'a clean frosted glass block with soft internal light',
+        'botanical': 'a platform made of stacked tropical leaves',
+        'sandstone': 'a rough-hewn natural sandstone block'
+    }[material] || 'a professional display pedestal';
+
+    const decorDesc = {
+        'organic': 'pampas grass and smooth river stones',
+        'minimalist': 'stark clean lines with no props',
+        'luxury': 'gold accents and silk fabric',
+        'floral': 'delicate petals and leaves',
+        'nature': 'moss and weathered rocks',
+        'seasonal': 'pine cones and seasonal elements',
+        'industrial': 'wire mesh and metal accents'
+    }[decor] || '';
+
+    const viewDesc = {
+        'eye-level': 'Eye-level professional product photography shot.',
+        'top-down': 'Top-down flat lay perspective.',
+        'macro': 'Macro close-up, focusing on the texture of the surface.'
+    }[level] || 'Professional shot.';
+
+    return `
+${ASPECT_RATIO_HEADER}
+[TASK: Background Asset Generation]
+- OBJECTIVE: Generate an EMPTY background scene for product placement.
+- NO PRODUCTS: The central focus is an EMPTY ${materialDesc}.
+- NO HUMANS: Strictly no people, hands, or skin.
+- CATEGORY VIBE: ${categoryContext.vibe}.
+- DECOR: Surrounded by ${decorDesc}.
+- COMPOSITION: ${viewDesc}
+- ATMOSPHERE: ${categoryContext.bg}, 8k quality, sharp focus on the pedestal. [SEED: ${seed}]
+`.trim();
+};
+
+export const generateAutoPlacementPrompt = (product, seed) => {
+    const productInfo = `${product.title} ${product.category ? `(Category: ${product.category})` : ''}`.trim();
+
+    return `
+${ASPECT_RATIO_HEADER}
+[TASK: Universal Smart Background Generation]
+- OBJECTIVE: Generate a high-end, professionally styled background scene for product photography.
+- CONTEXT: This background is being designed specifically for the product: "${productInfo}".
+- NO PRODUCTS: The scene must be EMPTY. No products, hands, or people.
+- SMART STYLE SELECTION: 
+    1. Analyze the product "${productInfo}".
+    2. Select the most aesthetically appropriate MATERIAL for the central display platform (e.g., polished marble for skincare, dark velvet or glass for luxury watches, rustic oak for wine/spirits, minimalist concrete for tech).
+    3. Select an ENVIRONMENT that matches the product's vibe (e.g., sun-drenched minimalist studio, moody luxury boutique, natural outdoor setting, or a high-end bar/cellar).
+- COMPOSITION: A professional eye-level shot. The central platform should be the hero, ready to host the product.
+- ATMOSPHERE: Sophisticated lighting, sharp focus, 8k quality. Cinematic shadows and reflections that enhance the sense of depth. [SEED: ${seed}]
+- RULES: No black bars, fill the 9:16 vertical frame completely.
+`;
+};

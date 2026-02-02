@@ -1,0 +1,46 @@
+{
+  "name": "airep24",
+  "private": true,
+  "sideEffects": false,
+  "type": "module",
+  "scripts": {
+    "build": "react-router build",
+    "dev": "shopify app dev",
+    "config:link": "shopify app config link",
+    "generate": "shopify app generate",
+    "deploy": "shopify app deploy",
+    "info": "shopify app info",
+    "start": "react-router-serve ./build/server/index.js",
+    "setup": "npx prisma generate"
+  },
+  "dependencies": {
+    "@google/genai": "^1.30.0",
+    "@prisma/client": "^6.0.0",
+    "@react-router/fs-routes": "^7.0.0",
+    "@react-router/node": "^7.0.0",
+    "@react-router/serve": "^7.0.0",
+    "@shopify/app": "latest",
+    "@shopify/cli": "latest",
+    "@shopify/polaris": "latest",
+    "@shopify/polaris-icons": "latest",
+    "@shopify/shopify-app-react-router": "latest",
+    "@shopify/shopify-app-session-storage-prisma": "^7.0.3",
+    "isbot": "^5.0.0",
+    "jsonwebtoken": "^9.0.3",
+    "jszip": "^3.10.1",
+    "prisma": "^6.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "react-router": "^7.0.0",
+    "react-router-dom": "^7.9.6",
+    "sharp": "^0.33.2",
+    "vite": "^5.1.0",
+    "vite-tsconfig-paths": "^5.0.0"
+  },
+  "devDependencies": {
+    "@react-router/dev": "^7.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.2.0"
+  }
+}

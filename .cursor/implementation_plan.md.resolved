@@ -1,0 +1,53 @@
+# Image Generation & UI Updates Plan
+
+## Goal
+Fix image generation issues (aspect ratio, location), improve UI persistence and navigation, update text labels, and add product action selection.
+
+## User Review Required
+> [!IMPORTANT]
+> **Aspect Ratio Change**: Images will be resized to 3:4 ratio (768x1024) instead of square (1024x1024). This affects both input resizing and output generation.
+
+> [!NOTE]
+> **UI Changes**: "Clear Custom" buttons will be removed. Scroll arrows will be added. Text labels will be updated to Russian as requested.
+
+## Proposed Changes
+
+### 1. Image Generation Fixes
+#### [MODIFY] [app/services/ai.server.js](file:///var/www/my-ugc-studio/app/services/ai.server.js)
+- Update [resizeImageBuffer](file:///var/www/my-ugc-studio/app/services/ai.server.js#4-28) to target 3:4 aspect ratio (e.g., 768x1024) instead of 1024x1024.
+- Ensure model and product images are resized to this target before sending to Gemini.
+
+#### [MODIFY] [app/routes/app._index.jsx](file:///var/www/my-ugc-studio/app/routes/app._index.jsx) (Server Action)
+- Update `generateBatch` logic (lines 382-405) to ensure `locationPrompt` is strongly emphasized in the prompt construction, especially when using custom models.
+- Add "Background:" prefix to location prompt to ensure it's treated as a setting.
+
+### 2. UI Persistence & Navigation
+#### [MODIFY] [app/routes/app._index.jsx](file:///var/www/my-ugc-studio/app/routes/app._index.jsx) (Client Component)
+- **Persistence**: Remove `setBatchResults([])` in [proceedWithGeneration](file:///var/www/my-ugc-studio/app/routes/app._index.jsx#907-940) to prevent clearing results.
+- **Navigation**:
+    - Remove "Clear Custom" buttons.
+    - Add Left/Right arrow buttons for Model and Location scroll containers.
+    - Implement scroll handler functions.
+- **Text Updates**:
+    - Change "Model" to "Выбери / Сгенерируй загрузи UGC модель для фото".
+    - Change "Location" to "Выбери / Сгенерируй загрузи локацию на фото".
+    - Change "Products" to "Выбери продукты для которых хочешь сгенерировать UGC фото".
+
+### 3. Product Action Feature
+#### [MODIFY] [app/routes/app._index.jsx](file:///var/www/my-ugc-studio/app/routes/app._index.jsx)
+- **UI**: Add "Action" selection to the Product Card (dropdown or modal).
+    - Options: "Demonstrate (Hold)", "Consume/Use", "Custom".
+    - If "Custom", show text input.
+- **Logic**: Pass [action](file:///var/www/my-ugc-studio/app/routes/app._index.jsx#84-674) and `customActionPrompt` in `productData` during `generateBatch` submission.
+- **Server Action**: Update prompt construction in `generateBatch` to use the selected action:
+    - If "Demonstrate": "holding the product clearly to demonstrate it"
+    - If "Consume": "using/consuming the product naturally"
+    - If "Custom": Use user's custom prompt.
+
+## Verification Plan
+### Manual Verification
+1. **Aspect Ratio**: Generate an image and verify it is 3:4 (portrait).
+2. **Location**: Generate with custom model + location and verify location is present.
+3. **Persistence**: Click Generate and verify previous results remain visible.
+4. **UI**: Check new text labels, verify "Clear" is gone, test scroll arrows.
+5. **Product Action**: Select different actions (Demonstrate, Consume, Custom) and verify the generated image reflects the action.
