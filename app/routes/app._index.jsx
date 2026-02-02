@@ -33,30 +33,38 @@ import {
 export const loader = async ({ request }) => {
   const { authenticate } = await import("../shopify.server");
   const { admin, session } = await authenticate.admin(request);
+  const { default: prisma } = await import("../db.server");
 
-  // Fetch real counts from Shopify
-  const response = await admin.graphql(
-    `#graphql
-    query getStoreStats {
-      productsCount { count }
-      collectionsCount { count }
-      priceRules(first: 1) { totalCount }
-      articles(first: 1) { totalCount }
-      shop {
-        shipsToCountries
-      }
-    }`
-  );
+  // Get persistent stats from DB
+  let stats = await prisma.storeStats.findUnique({
+    where: { shopDomain: session.shop }
+  });
 
-  const result = await response.json();
-  const stats = {
-    products: result.data?.productsCount?.count || 0,
-    collections: result.data?.collectionsCount?.count || 0,
-    discounts: result.data?.priceRules?.totalCount || 0,
-    articles: result.data?.articles?.totalCount || 0,
-    shippingCountries: result.data?.shop?.shipsToCountries?.length || 0,
-    policies: 3 // Hardcoded as fetching policies requires different query, but consistent with general setup
-  };
+  // If no stats yet, fetch initial counts
+  if (!stats) {
+    const response = await admin.graphql(
+      `#graphql
+      query getStoreStats {
+        productsCount { count }
+        collectionsCount { count }
+        priceRules(first: 1) { totalCount }
+        articles(first: 1) { totalCount }
+        pages(first: 1) { totalCount }
+        shop { shipsToCountries }
+      }`
+    );
+    const result = await response.json();
+    stats = {
+      products: result.data?.productsCount?.count || 0,
+      collections: result.data?.collectionsCount?.count || 0,
+      discounts: result.data?.priceRules?.totalCount || 0,
+      articles: result.data?.articles?.totalCount || 0,
+      pages: result.data?.pages?.totalCount || 0,
+      policies: 4,
+      shippingCountries: result.data?.shop?.shipsToCountries?.length || 0,
+      lastIndexed: null
+    };
+  }
 
   return {
     shop: session.shop,
@@ -71,11 +79,37 @@ export const loader = async ({ request }) => {
   };
 };
 
+export const action = async ({ request }) => {
+  const { authenticate } = await import("../shopify.server");
+  const { admin, session } = await authenticate.admin(request);
+  const { default: prisma } = await import("../db.server");
+  const { indexStoreData } = await import("../services/indexer.server");
+
+  const formData = await request.formData();
+  const intent = formData.get("intent");
+
+  if (intent === "index") {
+    const result = await indexStoreData(admin, session.shop, prisma);
+    return { success: result.success, message: result.success ? "Successfully indexed store data!" : "Indexing failed." };
+  }
+
+  return null;
+};
+
 export default function Index() {
-  const { shop, initialSettings } = useLoaderData();
+  const { shop, stats, initialSettings } = useLoaderData();
+  const fetcher = useFetcher();
+  const isIndexing = fetcher.state !== "idle";
+
   const [greeting, setGreeting] = useState(initialSettings.greeting);
   const [character, setCharacter] = useState(initialSettings.character);
   const [color, setColor] = useState(initialSettings.color);
+
+  useEffect(() => {
+    if (fetcher.data?.success) {
+      // Можно добавить уведомление (toast)
+    }
+  }, [fetcher.data]);
 
   const [selectedTab, setSelectedTab] = useState(0);
   const handleTabChange = useCallback((selectedTabIndex) => setSelectedTab(selectedTabIndex), []);
@@ -288,7 +322,23 @@ export default function Index() {
                   </Box>
 
                   <Divider />
-                  <Button variant="primary" icon={SaveIcon} url="/app/settings" fullWidth>Refresh Knowledge Base</Button>
+                  <fetcher.Form method="post">
+                    <input type="hidden" name="intent" value="index" />
+                    <Button
+                      variant="primary"
+                      icon={SaveIcon}
+                      fullWidth
+                      submit
+                      loading={isIndexing}
+                    >
+                      {stats.lastIndexed ? "Refresh Knowledge Base" : "Start Initial Indexing"}
+                    </Button>
+                  </fetcher.Form>
+                  {stats.lastIndexed && (
+                    <Text variant="bodyXs" tone="subdued" alignment="center">
+                      Last indexed: {new Date(stats.lastIndexed).toLocaleString()}
+                    </Text>
+                  )}
                 </BlockStack>
               </Card>
             </BlockStack>
