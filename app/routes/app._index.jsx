@@ -40,10 +40,13 @@ import { indexStoreData } from "../services/indexer.server";
 export const loader = async ({ request }) => {
   try {
     const { admin, session } = await authenticate.admin(request);
-    console.log("Admin object keys:", Object.keys(admin));
-    // If admin.rest is undefined, it might be nested or named differently in this version
-    if (admin.rest) console.log("Admin REST resources:", Object.keys(admin.rest.resources || {}));
-    else console.warn("ADMIN.REST IS UNDEFINED!");
+    console.log("Admin object type:", typeof admin);
+    console.log("Admin object props:", Object.getOwnPropertyNames(admin));
+    if (admin && admin.rest) {
+      console.log("Admin REST resources:", Object.keys(admin.rest.resources || {}));
+    } else {
+      console.warn("ADMIN.REST IS MISSING", admin ? Object.keys(admin) : "null");
+    }
 
     // 1. Discover Presets
     const presetsDir = path.join(process.cwd(), "extensions", "airep24-widget", "assets", "presets");
