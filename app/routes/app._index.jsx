@@ -36,6 +36,7 @@ import fs from "fs/promises";
 import path from "path";
 import { indexStoreData } from "../services/indexer.server";
 
+console.error("DEBUG: LOADING APP_INDEX ROUTE MODULE");
 // Loader: Discover presets and load profiles with assets
 export const loader = async ({ request }) => {
   console.log("DEBUG: START LOADER", request.url);
