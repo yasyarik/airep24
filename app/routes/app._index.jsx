@@ -478,10 +478,33 @@ export default function Index() {
           <Text as="p"><strong>{enableStatus.text}</strong></Text>
         </Banner>
 
+        <Card title="Knowledge Base (AI Training Data)">
+          <BlockStack gap="400">
+            <Text as="p" tone="subdued">This information is common for all AI personas. It includes your products, pages, and store policies.</Text>
+            <InlineStack align="space-between">
+              <BlockStack gap="100">
+                <InlineStack gap="200">
+                  <Badge tone="info">{stats.products} Products</Badge>
+                  <Badge tone="info">{stats.collections} Collections</Badge>
+                  <Badge tone="info">{stats.pages} Pages</Badge>
+                </InlineStack>
+                <Text variant="bodySm" tone="subdued">Last Synced: {stats.lastIndexed ? new Date(stats.lastIndexed).toLocaleString() : "Never"}</Text>
+              </BlockStack>
+              <Button
+                variant="primary"
+                onClick={() => fetcher.submit({ intent: 'index' }, { method: 'post' })}
+                loading={fetcher.state !== 'idle'}
+              >
+                Sync Store Data
+              </Button>
+            </InlineStack>
+          </BlockStack>
+        </Card>
+
         <Layout>
           <Layout.Section>
             <Card padding="0">
-              <Tabs tabs={[{ id: 'character', content: 'Personas' }, { id: 'style', content: 'Styling' }, { id: 'sync', content: 'Knowledge Base' }]} selected={selectedTab} onSelect={handleTabChange}>
+              <Tabs tabs={[{ id: 'character', content: 'Personas' }, { id: 'style', content: 'Styling' }]} selected={selectedTab} onSelect={handleTabChange}>
                 <Box padding="500">
                   {selectedTab === 0 && (
                     <BlockStack gap="500">
@@ -716,18 +739,6 @@ export default function Index() {
                     </BlockStack>
                   )}
 
-                  {selectedTab === 2 && (
-                    <BlockStack gap="500">
-                      <Text variant="headingMd">Knowledge Base Sync</Text>
-                      <Card>
-                        <BlockStack gap="200" padding="400">
-                          <Text>Products: {stats.products}</Text>
-                          <Text>Last Sync: {stats.lastIndexed || "Never"}</Text>
-                          <Button onClick={() => fetcher.submit({ intent: 'index' }, { method: 'post' })} loading={fetcher.state !== 'idle'}>Sync Now</Button>
-                        </BlockStack>
-                      </Card>
-                    </BlockStack>
-                  )}
                 </Box>
               </Tabs>
             </Card>
