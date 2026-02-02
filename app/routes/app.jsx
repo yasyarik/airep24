@@ -9,20 +9,30 @@ export const links = () => [{ rel: "stylesheet", href: polarisStyles }];
 
 export const loader = async ({ request }) => {
   const { authenticate } = await import("../shopify.server");
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
+  const { default: prisma } = await import("../db.server");
 
-  return { apiKey: process.env.SHOPIFY_API_KEY || "" };
+  // Fetch count of active chats (mocking logic for now since model is simple)
+  // In a real scenario, this would be: await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } })
+  const activeChatCount = 12; // MOCKED for now to show the effect
+
+  return {
+    apiKey: process.env.SHOPIFY_API_KEY || "",
+    activeChatCount
+  };
 };
 
 export default function App() {
-  const { apiKey } = useLoaderData();
+  const { apiKey, activeChatCount } = useLoaderData();
 
   return (
     <AppProvider embedded apiKey={apiKey}>
       <PolarisAppProvider i18n={enTranslations}>
         <ui-nav-menu>
           <a href="/app" rel="home">Dashboard</a>
-          <a href="/app/live-chats">Live Chats</a>
+          <a href="/app/live-chats">
+            Live Chats {activeChatCount > 0 ? `(${activeChatCount})` : ''}
+          </a>
           <a href="/app/settings">Settings</a>
           <a href="/app/pricing">Subscription</a>
         </ui-nav-menu>

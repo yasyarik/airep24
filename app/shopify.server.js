@@ -8,13 +8,9 @@ import {
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
 
-// Plan names - must match exactly what's used in billing.request()
-export const PLAN_BASIC = "Basic Plan";
-export const PLAN_BASIC_ANNUAL = "Basic Plan (Annual)";
-export const PLAN_STANDARD = "Standard Plan";
-export const PLAN_STANDARD_ANNUAL = "Standard Plan (Annual)";
-export const PLAN_PRO = "Pro Plan";
-export const PLAN_PRO_ANNUAL = "Pro Plan (Annual)";
+// Plan names
+export const PLAN_GROWTH = "Growth Plan";
+export const PLAN_SCALE = "Scale Plan";
 
 const shopify = shopifyApp({
   apiKey: process.env.SHOPIFY_API_KEY,
@@ -25,6 +21,30 @@ const shopify = shopifyApp({
   authPathPrefix: "/auth",
   sessionStorage: new PrismaSessionStorage(prisma),
   distribution: AppDistribution.AppStore,
+  billing: {
+    [PLAN_GROWTH]: {
+      lineItems: [
+        {
+          amount: 29,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        }
+      ],
+      trialDays: 7,
+      replacementBehavior: "FULL_WITH_PRORATION"
+    },
+    [PLAN_SCALE]: {
+      lineItems: [
+        {
+          amount: 99,
+          currencyCode: "USD",
+          interval: BillingInterval.Every30Days,
+        }
+      ],
+      trialDays: 7,
+      replacementBehavior: "FULL_WITH_PRORATION"
+    },
+  },
   ...(process.env.SHOP_CUSTOM_DOMAIN
     ? { customShopDomains: [process.env.SHOP_CUSTOM_DOMAIN] }
     : {}),
