@@ -36,6 +36,9 @@ export const loader = async ({ request }) => {
   try {
     const { authenticate } = await import("../shopify.server");
     const { admin, session } = await authenticate.admin(request);
+    console.log("Admin object keys:", Object.keys(admin));
+    if (admin.rest) console.log("Admin REST resources:", Object.keys(admin.rest.resources || {}));
+    else console.warn("ADMIN.REST IS UNDEFINED!");
     const { default: prisma } = await import("../db.server");
     const fs = await import("fs/promises");
     const path = await import("path");
