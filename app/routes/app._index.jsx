@@ -133,7 +133,45 @@ export const loader = async ({ request }) => {
     if (!widgetConfig) widgetConfig = await prisma.widgetConfig.create({ data: { shopDomain: session.shop } });
     const activeChatCount = await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } });
 
-    return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets };
+    // 5. Check True Theme Status (App Embed)
+    let themeEnabled = false;
+    try {
+      // Need Rest Resources
+      const Theme = await admin.rest.resources.Theme.all({ session });
+      const mainTheme = Theme.data ? Theme.data.find(t => t.role === 'main') : null;
+
+      if (mainTheme) {
+        const asset = await admin.rest.resources.Asset.all({
+          session,
+          theme_id: mainTheme.id,
+          asset: { key: 'config/settings_data.json' }
+        });
+
+        // Asset.all returns array, but with param it might be filtered. 
+        // Normally Asset.find isn't available on resource class directly in some versions, but 'all' works.
+        // The response structure depends on library version. 
+        // Usually `asset[0].value`.
+
+        if (asset && asset.data && asset.data.length > 0) {
+          const json = JSON.parse(asset.data[0].value);
+          const blocks = json.current?.blocks || {};
+
+          // Look for our widget
+          for (const key in blocks) {
+            const block = blocks[key];
+            // Type format: "shopify:\/\/apps\/airep24\/extensions\/airep24-widget\/..."
+            if (block.type && block.type.includes("airep24-widget")) {
+              themeEnabled = !block.disabled;
+              break;
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Theme check failed:", e.message);
+    }
+
+    return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled };
   } catch (error) {
     console.error("[LOADER ERROR]:", error.message);
     throw error;
@@ -248,7 +286,7 @@ export const action = async ({ request }) => {
 };
 
 export default function Index() {
-  const { stats, widgetConfig, profiles, activeChatCount, discoveredPresets } = useLoaderData();
+  const { stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled } = useLoaderData();
   const fetcher = useFetcher();
   const uploadFetcher = useFetcher();
 
@@ -282,6 +320,12 @@ export default function Index() {
 
   const [selectedTab, setSelectedTab] = useState(0);
   const handleTabChange = useCallback((x) => setSelectedTab(x), []);
+
+  const enableStatus = useMemo(() => {
+    if (!widgetConfig.enabled) return { tone: 'warning', text: 'Widget is globally disabled in App Settings.' };
+    if (!themeEnabled) return { tone: 'critical', text: 'Widget switch is ON, but "AiRep24 Widget" is disabled in your Theme Editor. It will not appear on the site.' };
+    return { tone: 'success', text: 'AI Widget is Active and Live on your store.' };
+  }, [widgetConfig.enabled, themeEnabled]);
 
   // Hydrate form when profile selection changes
   useEffect(() => {
@@ -412,8 +456,8 @@ export default function Index() {
   return (
     <Page title="AiRep24 Dashboard" secondaryActions={[{ content: widgetConfig.enabled ? "Disable All" : "Enable AI Widget", tone: widgetConfig.enabled ? "critical" : "success", onAction: () => fetcher.submit({ intent: "toggleEnabled", current: String(widgetConfig.enabled) }, { method: "post" }) }]}>
       <BlockStack gap="500">
-        <Banner tone={widgetConfig.enabled ? "success" : "warning"}>
-          <Text as="p">AI Widget is <strong>{widgetConfig.enabled ? "Active" : "Disabled"}</strong>.</Text>
+        <Banner tone={enableStatus.tone}>
+          <Text as="p"><strong>{enableStatus.text}</strong></Text>
         </Banner>
 
         <Layout>
