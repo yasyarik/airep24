@@ -2,7 +2,7 @@
 
 client_id = "0c2186e5ec1b54b9b9b01a77255d6304"
 name = "AiRep24"
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://app.airep24.com"
 embedded = true
 handle = "airep24"
 
@@ -35,7 +35,11 @@ api_version = "2026-04"
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = ""
+scopes = "write_products"
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [
+  "https://app.airep24.com/auth/callback",
+  "https://app.airep24.com/auth/shopify/callback",
+  "https://app.airep24.com/api/auth/callback"
+]
