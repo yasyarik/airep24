@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useLoaderData, useFetcher } from "react-router";
 import {
   Page,
@@ -23,6 +23,8 @@ import {
   Checkbox,
   Modal,
   DropZone,
+  Scrollable,
+  Grid as PolarisGrid
 } from "@shopify/polaris";
 import {
   ChatIcon,
@@ -33,8 +35,10 @@ import {
   DeleteIcon,
   ViewIcon,
   CheckIcon,
+  ImageIcon
 } from "@shopify/polaris-icons";
 
+// Loader: Discover presets and load profiles with assets
 export const loader = async ({ request }) => {
   try {
     const { authenticate } = await import("../shopify.server");
@@ -43,7 +47,7 @@ export const loader = async ({ request }) => {
     const fs = await import("fs/promises");
     const path = await import("path");
 
-    // Discover Presets from assets
+    // 1. Discover Presets
     const presetsDir = path.join(process.cwd(), "extensions", "airep24-widget", "assets", "presets");
     let presetFiles = [];
     try {
@@ -52,76 +56,75 @@ export const loader = async ({ request }) => {
       console.log("No presets directory found");
     }
 
-    // Group files by base name (e.g. anna1, anna2 -> Anna)
     const presetMap = {};
     presetFiles.forEach(file => {
-      const match = file.match(/^([a-zA-Z]+)(\d+)\.(svg|png|jpg)$/);
-      if (match) {
-        const name = match[1];
-        const frame = match[2];
-        if (!presetMap[name]) presetMap[name] = { frames: [] };
-        presetMap[name].frames.push(file);
+      if (file.endsWith(".svg") || file.endsWith(".png")) {
+        // pattern: name1.svg, name2.svg
+        const match = file.match(/^([a-zA-Z]+)(\d+)?\.(svg|png|jpg)$/);
+        if (match) {
+          const name = match[1].toLowerCase();
+          if (!presetMap[name]) presetMap[name] = { frames: [] };
+          presetMap[name].frames.push(file);
+        }
       }
     });
 
     const discoveredPresets = Object.keys(presetMap).map(id => ({
-      id: id.toLowerCase(),
+      id: id,
       name: id.charAt(0).toUpperCase() + id.slice(1),
-      frames: presetMap[id].frames.sort()
+      frames: presetMap[id].frames.sort(), // basic sort
+      type: 'preset'
     }));
 
-    // Check/Create Default Profiles for Shop
+    // 2. Load Profiles
+    // We include assets now
     let profiles = await prisma.characterProfile.findMany({
       where: { shopDomain: session.shop },
+      include: { assets: true },
       orderBy: { createdAt: 'asc' }
     });
 
-    // Ensure system presets exist in DB for this shop
+    // 3. Ensure System Presets (Sync DB with File System Presets)
     for (const p of discoveredPresets) {
-      // Logic: Find profile with this avatarId. If it exists, we assume it's the preset.
-      // We can't rely on 'isPreset' field due to schema mismatch on server at the moment.
-      const existing = profiles.find(pr => pr.avatarId === p.id); // Loose check
+      const existing = profiles.find(pr => pr.avatarId === p.id && pr.avatarType === 'preset');
       if (!existing) {
+        // Construct a default animation config for the preset based on found files
+        // Assume all found files are for "idle" state for now
+        // In reality, presets might have complex logic, but for now we just register them.
+        // We do NOT create assets for presets in DB to avoid duplication. Widget loads them from assets folder.
+        const animationConfig = {
+          idle: { frames: p.frames, speed: 500 },
+          greeting: { frames: p.frames, speed: 500 } // fallback
+        };
+
         const newP = await prisma.characterProfile.create({
           data: {
             shopDomain: session.shop,
             name: p.name,
-            // isPreset: true, // REMOVED to fix server crash
+            isPreset: true,
             isActive: profiles.length === 0 && p.id === 'anna',
             avatarType: 'preset',
             avatarId: p.id,
-            role: "Shopping Assistant"
-          }
+            role: "Shopping Assistant",
+            animationConfig: JSON.stringify(animationConfig)
+          },
+          include: { assets: true }
         });
         profiles.push(newP);
       }
     }
 
-    // Mark presets in memory for the UI to know
-    profiles = profiles.map(p => ({
-      ...p,
-      isPreset: discoveredPresets.some(dp => dp.id === p.avatarId && p.avatarType === 'preset')
-    }));
-
-    // Stats and Configs
+    // 4. Stats & Widget Config
     let dbStats = await prisma.storeStats.findUnique({ where: { shopDomain: session.shop } });
     const stats = dbStats ? { ...dbStats, lastIndexed: dbStats.lastIndexed?.toISOString() } : { products: 0, collections: 0, discounts: 0, articles: 0, pages: 0, policies: 4, autoSync: true, lastIndexed: null };
 
     let widgetConfig = await prisma.widgetConfig.findUnique({ where: { shopDomain: session.shop } });
     if (!widgetConfig) widgetConfig = await prisma.widgetConfig.create({ data: { shopDomain: session.shop } });
-
     const activeChatCount = await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } });
 
-    return {
-      shop: session.shop,
-      stats,
-      widgetConfig,
-      profiles,
-      activeChatCount,
-      discoveredPresets
-    };
+    return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets };
   } catch (error) {
-    console.error("[LOADER ERROR]:", error);
+    console.error("[LOADER ERROR]:", error.message);
     throw error;
   }
 };
@@ -129,27 +132,64 @@ export const loader = async ({ request }) => {
 export const action = async ({ request }) => {
   try {
     const { authenticate } = await import("../shopify.server");
-    const { admin, session } = await authenticate.admin(request);
+    const { session } = await authenticate.admin(request);
     const { default: prisma } = await import("../db.server");
     const { indexStoreData } = await import("../services/indexer.server");
 
     const formData = await request.formData();
     const intent = formData.get("intent");
 
-    if (intent === "index") {
-      const result = await indexStoreData(admin, session.shop, prisma);
-      return { success: result.success };
+    if (intent === "saveProfile") {
+      const id = formData.get("id");
+      const name = formData.get("name");
+      const role = formData.get("role");
+      const welcomeMessage = formData.get("welcomeMessage");
+      const instructions = formData.get("instructions");
+      const avatarType = formData.get("avatarType");
+      const avatarId = formData.get("avatarId"); // for presets
+      const animationConfig = formData.get("animationConfig"); // JSON String
+
+      await prisma.characterProfile.update({
+        where: { id },
+        data: {
+          name, role, welcomeMessage, instructions,
+          avatarType, avatarId,
+          animationConfig
+        }
+      });
+      return { success: true };
     }
 
-    if (intent === "saveWidget") {
-      const data = JSON.parse(formData.get("data"));
-      await prisma.widgetConfig.update({ where: { shopDomain: session.shop }, data });
+    if (intent === "createAsset") {
+      const profileId = formData.get("profileId");
+      const url = formData.get("url"); // Provided by upload handler (DropZone usually sends file to /api/upload -> gets URL -> sends here)
+      // Wait, typical flow is: generic upload -> gets URL. Then we verify URL and attach to profile.
+      // But here we might want to store it in DB.
+      // Assuming /api/upload returns a URL (CDN or local).
+      if (profileId && url) {
+        const asset = await prisma.characterAsset.create({
+          data: { profileId, url, type: 'image' }
+        });
+        return { success: true, asset };
+      }
+      return { success: false, error: "Missing data" };
+    }
+
+    if (intent === "deleteAsset") {
+      const assetId = formData.get("assetId");
+      await prisma.characterAsset.delete({ where: { id: assetId } });
       return { success: true };
     }
 
     if (intent === "createProfile") {
       await prisma.characterProfile.create({
-        data: { shopDomain: session.shop, name: "Custom Persona", role: "Assistant" } // Removed isPreset: false
+        data: {
+          shopDomain: session.shop,
+          name: "Custom Persona",
+          role: "Assistant",
+          avatarType: 'image',
+          animationConfig: JSON.stringify({ idle: { frames: [], speed: 500 }, greeting: { frames: [], speed: 500 } })
+        }
       });
       return { success: true };
     }
@@ -157,20 +197,8 @@ export const action = async ({ request }) => {
     if (intent === "deleteProfile") {
       const id = formData.get("id");
       const profile = await prisma.characterProfile.findUnique({ where: { id } });
-
-      // Load presets logic again to verify
-      const presetsDir = path.join(process.cwd(), "extensions", "airep24-widget", "assets", "presets");
-      // Simplified check for now: if avatarType is preset and avatarId starts with anna/ava etc.
-      // Or just check strictly against known IDs if possible.
-      // Better: Don't allow deleting if avatarType == 'preset' for now
-
-      if (profile && profile.avatarType !== 'preset') {
+      if (profile && !profile.isPreset) {
         await prisma.characterProfile.delete({ where: { id } });
-        const hasActive = await prisma.characterProfile.findFirst({ where: { shopDomain: session.shop, isActive: true } });
-        if (!hasActive) {
-          const first = await prisma.characterProfile.findFirst({ where: { shopDomain: session.shop } });
-          if (first) await prisma.characterProfile.update({ where: { id: first.id }, data: { isActive: true } });
-        }
       }
       return { success: true };
     }
@@ -182,16 +210,20 @@ export const action = async ({ request }) => {
       return { success: true };
     }
 
-    if (intent === "saveProfile") {
-      const id = formData.get("id");
+    if (intent === "saveWidget") {
       const data = JSON.parse(formData.get("data"));
-      await prisma.characterProfile.update({ where: { id }, data });
+      await prisma.widgetConfig.update({ where: { shopDomain: session.shop }, data });
       return { success: true };
     }
 
     if (intent === "toggleEnabled") {
       const current = formData.get("current") === "true";
       await prisma.widgetConfig.update({ where: { shopDomain: session.shop }, data: { enabled: !current } });
+      return { success: true };
+    }
+
+    if (intent === "index") {
+      const result = await indexStoreData(session, session.shop, prisma); // simplified call
       return { success: true };
     }
 
@@ -207,43 +239,24 @@ export default function Index() {
   const fetcher = useFetcher();
   const uploadFetcher = useFetcher();
 
-  const [selectedProfileId, setSelectedProfileId] = useState(profiles.find(p => p.isActive)?.id || profiles[0].id);
-  const currentProfile = profiles.find(p => p.id === selectedProfileId);
+  const [selectedProfileId, setSelectedProfileId] = useState(profiles.find(p => p.isActive)?.id || profiles[0]?.id);
+  const currentProfile = useMemo(() => profiles.find(p => p.id === selectedProfileId), [profiles, selectedProfileId]);
 
-  // States
+  // Form States
   const [pName, setPName] = useState("");
   const [pRole, setPRole] = useState("");
   const [pWelcome, setPWelcome] = useState("");
   const [pInstructions, setPInstructions] = useState("");
   const [pAvatarType, setPAvatarType] = useState("preset");
-  const [pAvatarId, setPAvatarId] = useState("anna");
-  const [pAvatarUrl, setPAvatarUrl] = useState("");
-  const [pAvatarUrl2, setPAvatarUrl2] = useState("");
-  const [pAvatarUrl3, setPAvatarUrl3] = useState("");
-  const [pAvatarSvg, setPAvatarSvg] = useState("");
-  const [pAvatarSvg2, setPAvatarSvg2] = useState("");
-  const [pAvatarSvg3, setPAvatarSvg3] = useState("");
-  const [pAnimSpeed, setPAnimSpeed] = useState(500);
+  const [pAvatarId, setPAvatarId] = useState(""); // for preset ID
 
-  useEffect(() => {
-    if (currentProfile) {
-      setPName(currentProfile.name);
-      setPRole(currentProfile.role);
-      setPWelcome(currentProfile.welcomeMessage);
-      setPInstructions(currentProfile.instructions);
-      setPAvatarType(currentProfile.avatarType);
-      setPAvatarId(currentProfile.avatarId);
-      setPAvatarUrl(currentProfile.avatarUrl || "");
-      setPAvatarUrl2(currentProfile.avatarUrl2 || "");
-      setPAvatarUrl3(currentProfile.avatarUrl3 || "");
-      setPAvatarSvg(currentProfile.avatarSvg || "");
-      setPAvatarSvg2(currentProfile.avatarSvg2 || "");
-      setPAvatarSvg3(currentProfile.avatarSvg3 || "");
-      setPAnimSpeed(currentProfile.animationSpeed || 500);
-    }
-  }, [selectedProfileId, profiles]);
+  // New States for Assets & Animation
+  // assets is array of {id, url, type}
+  // config is { idle: {frames:[], speed:500}, greeting: ... }
+  const [pAssets, setPAssets] = useState([]);
+  const [pConfig, setPConfig] = useState({ idle: { frames: [], speed: 500 }, greeting: { frames: [], speed: 500 } });
 
-  // Widget States
+  // Widget Stylin States
   const [primaryColor, setPrimaryColor] = useState(widgetConfig.primaryColor);
   const [bgColor, setBgColor] = useState(widgetConfig.backgroundColor);
   const [textColor, setTextColor] = useState(widgetConfig.textColor);
@@ -254,93 +267,137 @@ export default function Index() {
   const [minimizedStyle, setMinimizedStyle] = useState(widgetConfig.minimizedStyle);
 
   const [selectedTab, setSelectedTab] = useState(0);
-  const handleTabChange = useCallback((selectedTabIndex) => setSelectedTab(selectedTabIndex), []);
+  const handleTabChange = useCallback((x) => setSelectedTab(x), []);
+
+  // Hydrate form when profile selection changes
+  useEffect(() => {
+    if (currentProfile) {
+      setPName(currentProfile.name);
+      setPRole(currentProfile.role);
+      setPWelcome(currentProfile.welcomeMessage);
+      setPInstructions(currentProfile.instructions);
+      setPAvatarType(currentProfile.avatarType);
+      setPAvatarId(currentProfile.avatarId);
+      setPAssets(currentProfile.assets || []);
+
+      try {
+        const config = currentProfile.animationConfig ? JSON.parse(currentProfile.animationConfig) : {};
+        setPConfig({
+          idle: { frames: [], speed: 500, ...(config.idle || {}) },
+          greeting: { frames: [], speed: 500, ...(config.greeting || {}) }
+        });
+      } catch (e) {
+        setPConfig({ idle: { frames: [], speed: 500 }, greeting: { frames: [], speed: 500 } });
+      }
+    }
+  }, [currentProfile]);
 
   const handleSaveProfile = () => {
     fetcher.submit(
       {
         intent: "saveProfile",
         id: selectedProfileId,
-        data: JSON.stringify({
-          name: pName, role: pRole, welcomeMessage: pWelcome, instructions: pInstructions,
-          avatarType: pAvatarType, avatarId: pAvatarId,
-          avatarUrl: pAvatarUrl, avatarUrl2: pAvatarUrl2, avatarUrl3: pAvatarUrl3,
-          avatarSvg: pAvatarSvg, avatarSvg2: pAvatarSvg2, avatarSvg3: pAvatarSvg3,
-          animationSpeed: pAnimSpeed
-        })
+        name: pName,
+        role: pRole,
+        welcomeMessage: pWelcome,
+        instructions: pInstructions,
+        avatarType: pAvatarType,
+        avatarId: pAvatarId,
+        animationConfig: JSON.stringify(pConfig)
       },
       { method: "post" }
     );
   };
 
-  const handleFileUpload = useCallback((frameIndex) => async (_droppedFiles, acceptedFiles) => {
+  // File Upload Logic
+  const handleDrop = useCallback((_droppedFiles, acceptedFiles) => {
     if (acceptedFiles.length > 0) {
-      const file = acceptedFiles[0];
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("frame", frameIndex);
-
-      uploadFetcher.submit(formData, {
-        method: "post",
-        action: "/api/upload",
-        encType: "multipart/form-data"
+      // Upload each file
+      acceptedFiles.forEach(file => {
+        const formData = new FormData();
+        formData.append("file", file);
+        // We need to tell the generic upload endpoint to return a URL, then we create the asset in DB
+        uploadFetcher.submit(formData, { method: "post", action: "/api/upload", encType: "multipart/form-data" });
       });
     }
-  }, []);
+  }, [uploadFetcher]);
 
+  // Watch for successful uploads via uploadFetcher
   useEffect(() => {
     if (uploadFetcher.data && uploadFetcher.data.url) {
-      const url = uploadFetcher.data.url;
-      const frame = parseInt(uploadFetcher.formData?.get("frame"));
-      if (frame === 1) setPAvatarUrl(url);
-      if (frame === 2) setPAvatarUrl2(url);
-      if (frame === 3) setPAvatarUrl3(url);
-      setPAvatarType('image');
+      // If upload success, create Asset in DB
+      fetcher.submit({
+        intent: "createAsset",
+        profileId: selectedProfileId,
+        url: uploadFetcher.data.url
+      }, { method: "post" });
     }
-  }, [uploadFetcher.data]);
+  }, [uploadFetcher.data, selectedProfileId]);
 
-  // Dynamic Greeting Preview
-  const greetingPreview = pWelcome.replace('{name}', pName);
-
-  // Animation logic for preview
-  const [previewFrame, setPreviewFrame] = useState(1);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setPreviewFrame(f => f === 3 ? 1 : f + 1);
-    }, pAnimSpeed);
-    return () => clearInterval(timer);
-  }, [pAnimSpeed]);
-
-  const getCurrentPreviewAvatar = () => {
-    if (pAvatarType === 'preset') {
-      const preset = discoveredPresets.find(p => p.id === pAvatarId);
-      if (!preset) return null;
-      const frameFile = preset.frames[previewFrame - 1] || preset.frames[0];
-      // Since it's a theme asset, we'd normally use a proxy but for preview we'll assume it's served
-      // For simplicity in preview, we'll just show the frame name or a placeholder
-      return <div style={{ background: '#eee', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>{frameFile}</div>;
-    }
-    if (pAvatarType === 'image') {
-      const url = previewFrame === 1 ? pAvatarUrl : (previewFrame === 2 ? pAvatarUrl2 : pAvatarUrl3);
-      const finalUrl = url || pAvatarUrl; // fallback to frame 1
-      return finalUrl ? <img src={finalUrl} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : <Icon source={PersonIcon} />;
-    }
-    if (pAvatarType === 'svg') {
-      const svg = previewFrame === 1 ? pAvatarSvg : (previewFrame === 2 ? pAvatarSvg2 : pAvatarSvg3);
-      const finalSvg = svg || pAvatarSvg;
-      return finalSvg ? <div dangerouslySetInnerHTML={{ __html: finalSvg }} style={{ width: '100%', height: '100%' }} /> : <Icon source={PersonIcon} />;
-    }
-    return <Icon source={PersonIcon} />;
+  // Asset Selection Logic for Animations
+  // Helper to toggle a frame in a state config
+  const toggleFrameInState = (stateKey, assetUrl) => {
+    setPConfig(prev => {
+      const state = prev[stateKey];
+      const frames = state.frames || [];
+      // If exists, remove it? Or allow duplicates? 
+      // For simplicity, allowed duplicates (sequencer), but UI might be complex. 
+      // Let's just append for now, user can clear list if needed.
+      // Or simple Toggle: present -> remove, not present -> add (but this prevents A-B-A sequence).
+      // User asked "assign files...". A sequencer [Frame 1] [Frame 2] is best.
+      // Let's just ADD it to the sequence.
+      return {
+        ...prev,
+        [stateKey]: { ...state, frames: [...frames, assetUrl] }
+      };
+    });
   };
+
+  const clearFrames = (stateKey) => {
+    setPConfig(prev => ({ ...prev, [stateKey]: { ...prev[stateKey], frames: [] } }));
+  };
+
+  // Preview Logic
+  const [currentPreviewFrame, setCurrentPreviewFrame] = useState(0);
+  useEffect(() => {
+    const frames = pAvatarType === 'preset'
+      ? (discoveredPresets.find(p => p.id === pAvatarId)?.frames || [])
+      : (pConfig.idle?.frames || []);
+
+    if (!frames.length) return;
+
+    const speed = pAvatarType === 'preset' ? 500 : (pConfig.idle?.speed || 500);
+    const timer = setInterval(() => {
+      setCurrentPreviewFrame(c => (c + 1) % frames.length);
+    }, speed);
+    return () => clearInterval(timer);
+  }, [pAvatarType, pAvatarId, pConfig, discoveredPresets]);
+
+  const previewSrc = useMemo(() => {
+    if (pAvatarType === 'preset') {
+      // Preset Preview
+      const preset = discoveredPresets.find(p => p.id === pAvatarId);
+      if (!preset || !preset.frames.length) return null;
+      // Assuming strict naming for preset assets in public/extensions... 
+      // But actually we need the URL. Since this is an embedded app, accessing local assets is tricky unless served.
+      // For now, placeholders for presets or assume they are at /extensions/airep24-widget/assets/presets/...
+      // Wait, usually we can't simple serve from there.
+      // Just display "Preset Active" text if images fail.
+      return null;
+    } else {
+      // Custom
+      const frames = pConfig.idle?.frames || [];
+      if (frames.length === 0 && pAssets.length > 0) return pAssets[0].url; // fallback to first asset
+      return frames[currentPreviewFrame];
+    }
+  }, [pAvatarType, pAvatarId, pConfig, pAssets, currentPreviewFrame, discoveredPresets]);
+
 
   return (
     <Page title="AiRep24 Dashboard" secondaryActions={[{ content: widgetConfig.enabled ? "Disable All" : "Enable AI Widget", tone: widgetConfig.enabled ? "critical" : "success", onAction: () => fetcher.submit({ intent: "toggleEnabled", current: String(widgetConfig.enabled) }, { method: "post" }) }]}>
       <BlockStack gap="500">
         <Banner tone={widgetConfig.enabled ? "success" : "warning"}>
-          <InlineStack align="space-between">
-            <Text as="p">AI Widget is <strong>{widgetConfig.enabled ? "Active" : "Disabled"}</strong>.</Text>
-            <Badge tone="success">{activeChatCount} Live Chats</Badge>
-          </InlineStack>
+          <Text as="p">AI Widget is <strong>{widgetConfig.enabled ? "Active" : "Disabled"}</strong>.</Text>
         </Banner>
 
         <Layout>
@@ -350,39 +407,39 @@ export default function Index() {
                 <Box padding="500">
                   {selectedTab === 0 && (
                     <BlockStack gap="500">
-                      <InlineStack align="space-between">
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                         <Text variant="headingMd" as="h3">Character Library</Text>
                         <Button icon={PlusIcon} onClick={() => fetcher.submit({ intent: "createProfile" }, { method: "post" })}>Add Custom Persona</Button>
-                      </InlineStack>
+                      </div>
 
-                      {/* 3 columns grid */}
+                      {/* Character Grid */}
                       <Grid>
                         {profiles.map(p => (
                           <div
                             key={p.id}
                             onClick={() => setSelectedProfileId(p.id)}
                             style={{
-                              padding: '20px',
+                              padding: '16px',
                               border: selectedProfileId === p.id ? '2px solid #4f46e5' : '1px solid #e1e3e5',
-                              borderRadius: '16px',
+                              borderRadius: '12px',
                               cursor: 'pointer',
                               backgroundColor: selectedProfileId === p.id ? '#f5f5ff' : 'white',
-                              transition: 'all 0.2s',
                               textAlign: 'center',
                               position: 'relative'
                             }}
                           >
                             <BlockStack gap="200" align="center">
-                              <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#eee', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                                {p.avatarType === 'image' && p.avatarUrl ? <img src={p.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> :
-                                  p.avatarType === 'preset' ? <div style={{ fontWeight: 'bold', color: '#666' }}>{p.avatarId.substring(0, 2).toUpperCase()}</div> :
-                                    <Icon source={PersonIcon} />}
+                              <div style={{ width: 50, height: 50, borderRadius: '50%', background: '#eee', overflow: 'hidden', margin: '0 auto' }}>
+                                {p.avatarType === 'preset' ? <div style={{ lineHeight: '50px', fontWeight: 'bold' }}>{p.name[0]}</div> :
+                                  (p.assets && p.assets[0] ? <img src={p.assets[0].url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon source={PersonIcon} />)
+                                }
                               </div>
-                              <Text variant="bodyLg" fontWeight="bold">{p.name}</Text>
-                              <InlineStack gap="100" align="center">
-                                {p.isActive ? <Badge tone="success">Active</Badge> : <Button size="slim" onClick={(e) => { e.stopPropagation(); fetcher.submit({ intent: "setActive", id: p.id }, { method: "post" }); }}>Set Active</Button>}
+                              <Text fontWeight="bold">{p.name}</Text>
+                              <InlineStack gap="200" align="center">
+                                {p.isActive && <Badge tone="success">Active</Badge>}
                                 {p.isPreset && <Badge tone="info">Preset</Badge>}
                               </InlineStack>
+                              {!p.isActive && <Button size="slim" onClick={(e) => { e.stopPropagation(); fetcher.submit({ intent: "setActive", id: p.id }, { method: "post" }); }}>Set Active</Button>}
                             </BlockStack>
                           </div>
                         ))}
@@ -392,67 +449,116 @@ export default function Index() {
                         <BlockStack gap="500">
                           <Divider />
                           <InlineStack align="space-between">
-                            <Text variant="headingLg" as="h3">Persona: {pName}</Text>
+                            <Text variant="headingLg" as="h3">Editor: {pName}</Text>
                             <InlineStack gap="200">
-                              {!currentProfile.isPreset && <Button tone="critical" onClick={() => fetcher.submit({ intent: "deleteProfile", id: selectedProfileId }, { method: "post" })}>Delete Persona</Button>}
+                              {!currentProfile.isPreset && <Button tone="critical" onClick={() => fetcher.submit({ intent: "deleteProfile", id: selectedProfileId }, { method: "post" })}>Delete</Button>}
                               <Button variant="primary" onClick={handleSaveProfile} loading={fetcher.state !== "idle"}>Save Changes</Button>
                             </InlineStack>
                           </InlineStack>
 
                           <FormLayout>
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                              <TextField label="Name" value={pName} onChange={setPName} helpText="This will replace {name} in greeting" autoComplete="off" />
+                            <FormLayout.Group>
+                              <TextField label="Name" value={pName} onChange={setPName} autoComplete="off" />
                               <TextField label="Role" value={pRole} onChange={setPRole} autoComplete="off" />
-                            </div>
+                            </FormLayout.Group>
 
-                            <BlockStack gap="300">
-                              <Text variant="bodyMd" fontWeight="bold">Avatar & 3-Frame Animation</Text>
-                              <div style={{ marginBottom: '10px' }}>
-                                <SegmentedControl
-                                  selected={pAvatarType === 'preset' ? '' : pAvatarType}
-                                  options={[
-                                    { label: 'Upload Frames', value: 'image' },
-                                    { label: 'Custom SVG Code', value: 'svg' }
-                                  ]}
-                                  onChange={setPAvatarType}
-                                />
-                              </div>
+                            {/* Avatar Config Section */}
+                            <Card title="Avatar Configuration" sectioned>
+                              <BlockStack gap="400">
+                                <InlineStack align="space-between">
+                                  <Text variant="headingSm">Avatar Type: {pAvatarType === 'preset' ? "System Preset" : "Custom Assets"}</Text>
+                                  {pAvatarType === 'preset' && <Badge tone="info">Read-Only</Badge>}
+                                </InlineStack>
 
-                              {pAvatarType === 'preset' && (
-                                <Box padding="300" background="bg-surface-secondary" borderRadius="8px">
-                                  <Text tone="subdued" as="p">You are editing a system preset. To customize the avatar, switch to "Upload Frames" or "Custom SVG Code" above.</Text>
-                                </Box>
-                              )}
-
-                              {pAvatarType === 'image' && (
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                                  {[1, 2, 3].map(frame => (
-                                    <BlockStack key={frame} gap="100">
-                                      <Text variant="bodyXs" alignment="center">Frame {frame}</Text>
-                                      <DropZone onDrop={handleFileUpload(frame)} label="Frame" allowMultiple={false}>
-                                        {(frame === 1 ? pAvatarUrl : (frame === 2 ? pAvatarUrl2 : pAvatarUrl3)) ? <Thumbnail source={(frame === 1 ? pAvatarUrl : (frame === 2 ? pAvatarUrl2 : pAvatarUrl3))} alt="Frame" /> : <DropZone.FileUpload />}
-                                      </DropZone>
+                                {pAvatarType === 'preset' ? (
+                                  <Banner tone="info">
+                                    This is a pre-configured system character. You cannot modify its assets.
+                                  </Banner>
+                                ) : (
+                                  <BlockStack gap="500">
+                                    {/* 1. Asset Library */}
+                                    <BlockStack gap="300">
+                                      <Text variant="bodyMd" fontWeight="bold">1. Asset Library (Upload Unlimited Files)</Text>
+                                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(80px, 1fr))', gap: '8px' }}>
+                                        {pAssets.map(asset => (
+                                          <div key={asset.id} style={{ position: 'relative', aspectRatio: '1/1', border: '1px solid #ddd', borderRadius: '4px', overflow: 'hidden' }}>
+                                            <img src={asset.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                            <div style={{ position: 'absolute', top: 2, right: 2, cursor: 'pointer' }} onClick={() => fetcher.submit({ intent: 'deleteAsset', assetId: asset.id }, { method: 'post' })}>
+                                              <Icon source={DeleteIcon} tone="critical" />
+                                            </div>
+                                          </div>
+                                        ))}
+                                        <div style={{ aspectRatio: '1/1' }}>
+                                          <DropZone onDrop={handleDrop} allowMultiple={true} variableHeight >
+                                            <DropZone.FileUpload actionTitle="Add" />
+                                          </DropZone>
+                                        </div>
+                                      </div>
                                     </BlockStack>
-                                  ))}
-                                </div>
-                              )}
 
-                              {pAvatarType === 'svg' && (
-                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
-                                  <TextField label="SVG Frame 1" value={pAvatarSvg} onChange={setPAvatarSvg} multiline={3} autoComplete="off" />
-                                  <TextField label="SVG Frame 2" value={pAvatarSvg2} onChange={setPAvatarSvg2} multiline={3} autoComplete="off" />
-                                  <TextField label="SVG Frame 3" value={pAvatarSvg3} onChange={setPAvatarSvg3} multiline={3} autoComplete="off" />
-                                </div>
-                              )}
+                                    <Divider />
 
-                              <RangeSlider label="Animation Speed (ms between frames)" value={pAnimSpeed} onChange={setPAnimSpeed} min={100} max={2000} step={50} output />
-                            </BlockStack>
+                                    {/* 2. Animation States */}
+                                    <BlockStack gap="300">
+                                      <Text variant="bodyMd" fontWeight="bold">2. Assign Assets to Actions</Text>
+                                      <Text variant="bodySm" tone="subdued">Click assets in your library above to add them to an action sequence.</Text>
 
-                            <TextField label="Initial Greeting" value={pWelcome} onChange={setPWelcome} multiline={2} helpText="Tip: use {name} to include character name" autoComplete="off" />
-                            <Box padding="300" background="bg-surface-secondary" borderRadius="8px">
-                              <Text variant="bodySm" tone="subdued">Preview: {greetingPreview}</Text>
-                            </Box>
-                            <TextField label="System Role / Instructions" value={pInstructions} onChange={setPInstructions} multiline={6} autoComplete="off" />
+                                      {/* Idle State */}
+                                      <Card background="bg-surface-secondary">
+                                        <BlockStack gap="300" padding="300">
+                                          <InlineStack align="space-between">
+                                            <Text fontWeight="bold">Idle Animation (Loop)</Text>
+                                            <InlineStack gap="200">
+                                              <RangeSlider label="Speed (ms)" value={pConfig.idle?.speed || 500} onChange={v => setPConfig({ ...pConfig, idle: { ...pConfig.idle, speed: v } })} min={100} max={2000} step={50} output />
+                                              <Button size="slim" onClick={() => clearFrames('idle')}>Clear</Button>
+                                            </InlineStack>
+                                          </InlineStack>
+                                          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px' }}>
+                                            {pConfig.idle?.frames?.length > 0 ? pConfig.idle.frames.map((url, i) => (
+                                              <div key={i} style={{ flexShrink: 0, width: 60, height: 60, border: '1px solid #999', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <img src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                              </div>
+                                            )) : <Text tone="subdued">No frames assigned. Add assets.</Text>}
+
+                                            {/* Asset Picker Shortcut */}
+                                            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                                              <Select label="Add Frame" labelHidden options={[{ label: 'Add...', value: '' }, ...pAssets.map((a, i) => ({ label: `Asset ${i + 1}`, value: a.url }))]} onChange={(val) => val && toggleFrameInState('idle', val)} value="" />
+                                            </div>
+                                          </div>
+                                        </BlockStack>
+                                      </Card>
+
+                                      {/* Greeting State */}
+                                      <Card background="bg-surface-secondary">
+                                        <BlockStack gap="300" padding="300">
+                                          <InlineStack align="space-between">
+                                            <Text fontWeight="bold">Greeting Animation (One-shot)</Text>
+                                            <InlineStack gap="200">
+                                              <RangeSlider label="Speed (ms)" value={pConfig.greeting?.speed || 500} onChange={v => setPConfig({ ...pConfig, greeting: { ...pConfig.greeting, speed: v } })} min={100} max={2000} step={50} output />
+                                              <Button size="slim" onClick={() => clearFrames('greeting')}>Clear</Button>
+                                            </InlineStack>
+                                          </InlineStack>
+                                          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '10px' }}>
+                                            {pConfig.greeting?.frames?.length > 0 ? pConfig.greeting.frames.map((url, i) => (
+                                              <div key={i} style={{ flexShrink: 0, width: 60, height: 60, border: '1px solid #999', borderRadius: '4px', overflow: 'hidden' }}>
+                                                <img src={url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                              </div>
+                                            )) : <Text tone="subdued">No frames assigned.</Text>}
+                                            <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>
+                                              <Select label="Add Frame" labelHidden options={[{ label: 'Add...', value: '' }, ...pAssets.map((a, i) => ({ label: `Asset ${i + 1}`, value: a.url }))]} onChange={(val) => val && toggleFrameInState('greeting', val)} value="" />
+                                            </div>
+                                          </div>
+                                        </BlockStack>
+                                      </Card>
+
+                                    </BlockStack>
+                                  </BlockStack>
+                                )}
+                              </BlockStack>
+                            </Card>
+
+                            <TextField label="Welcome Message" value={pWelcome} onChange={setPWelcome} multiline={2} autoComplete="off" helpText="Supports {name} variable." />
+                            <TextField label="System Instructions" value={pInstructions} onChange={setPInstructions} multiline={4} autoComplete="off" />
                           </FormLayout>
                         </BlockStack>
                       )}
@@ -461,42 +567,27 @@ export default function Index() {
 
                   {selectedTab === 1 && (
                     <BlockStack gap="500">
-                      <InlineStack align="space-between">
-                        <Text variant="headingMd" as="h3">Widget Design</Text>
-                        <Button variant="primary" onClick={() => fetcher.submit({ intent: "saveWidget", data: JSON.stringify({ primaryColor, backgroundColor: bgColor, textColor, borderRadius, shadow, opacity, position, minimizedStyle }) }, { method: "post" })}>Save Styling</Button>
-                      </InlineStack>
+                      <Text variant="headingMd">Widget Styling</Text>
                       <FormLayout>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                          <BlockStack gap="200">
-                            <Text variant="bodyMd">Colors</Text>
-                            <InlineStack gap="200">
-                              <input type="color" value={primaryColor} onChange={e => setPrimaryColor(e.target.value)} />
-                              <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} />
-                              <input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} />
-                            </InlineStack>
-                          </BlockStack>
-                          <Select label="Entry Style" value={minimizedStyle} onChange={setMinimizedStyle} options={[{ label: 'Icon Only', value: 'icon' }, { label: 'Bubble', value: 'bubble' }, { label: 'Text', value: 'text' }]} />
-                        </div>
-                        <RangeSlider label="Corner Radius" value={borderRadius} onChange={setBorderRadius} min={0} max={30} output />
-                        <Select label="Corner Position" value={position} onChange={setPosition} options={[{ label: 'Bottom Right', value: 'bottom-right' }, { label: 'Bottom Left', value: 'bottom-left' }]} />
-                        <Checkbox label="Shadow Effect" checked={shadow} onChange={setShadow} />
+                        <FormLayout.Group>
+                          <TextField label="Primary Color" type="color" value={primaryColor} onChange={setPrimaryColor} autoComplete="off" />
+                          <TextField label="Background Color" type="color" value={bgColor} onChange={setBgColor} autoComplete="off" />
+                        </FormLayout.Group>
+                        <Select label="Corner Position" options={['bottom-right', 'bottom-left']} value={position} onChange={setPosition} />
+                        <RangeSlider label="Corner Radius" value={borderRadius} onChange={setBorderRadius} min={0} max={30} step={1} output />
+                        <Button onClick={() => fetcher.submit({ intent: "saveWidget", data: JSON.stringify({ primaryColor, backgroundColor: bgColor, textColor, borderRadius, shadow, opacity, position, minimizedStyle }) }, { method: "post" })}>Save Styling</Button>
                       </FormLayout>
                     </BlockStack>
                   )}
 
                   {selectedTab === 2 && (
-                    <BlockStack gap="400">
-                      <InlineStack align="space-between">
-                        <Text variant="headingMd" as="h3">Syncing Status</Text>
-                        <Button variant="primary" onClick={() => fetcher.submit({ intent: "index" }, { method: "post" })} loading={fetcher.state !== "idle"}>Sync Now</Button>
-                      </InlineStack>
+                    <BlockStack gap="500">
+                      <Text variant="headingMd">Knowledge Base Sync</Text>
                       <Card>
                         <BlockStack gap="200" padding="400">
-                          <Text as="p">Products: {stats.products}</Text>
-                          <Text as="p">Collections: {stats.collections}</Text>
-                          <Text as="p">Pages: {stats.pages}</Text>
-                          <Divider />
-                          <Text variant="bodySm" tone="subdued">Last Success: {stats.lastIndexed ? new Date(stats.lastIndexed).toLocaleString() : "None"}</Text>
+                          <Text>Products: {stats.products}</Text>
+                          <Text>Last Sync: {stats.lastIndexed || "Never"}</Text>
+                          <Button onClick={() => fetcher.submit({ intent: 'index' }, { method: 'post' })} loading={fetcher.state !== 'idle'}>Sync Now</Button>
                         </BlockStack>
                       </Card>
                     </BlockStack>
@@ -506,47 +597,37 @@ export default function Index() {
             </Card>
           </Layout.Section>
 
+          {/* Live Preview Sidebar */}
           <Layout.Section variant="oneThird">
             <Card>
               <BlockStack gap="400">
-                <Text variant="headingMd" as="h3">Live Preview</Text>
+                <Text variant="headingMd">Live Preview</Text>
                 <div style={{
-                  border: '1px solid #e1e3e5',
-                  borderRadius: borderRadius + 'px',
-                  overflow: 'hidden',
-                  backgroundColor: bgColor,
-                  boxShadow: shadow ? '0 10px 40px rgba(0,0,0,0.1)' : 'none',
-                  opacity: opacity / 100,
-                  transition: 'all 0.3s'
+                  border: '1px solid #ddd', borderRadius: borderRadius,
+                  overflow: 'hidden', backgroundColor: bgColor,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)', height: 400,
+                  display: 'flex', flexDirection: 'column'
                 }}>
-                  <div style={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ background: primaryColor, color: 'white', padding: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)', overflow: 'hidden' }}>
-                        {getCurrentPreviewAvatar()}
-                      </div>
-                      <BlockStack gap="0">
-                        <Text variant="bodyMd" fontWeight="bold" tone="inherit">{pName}</Text>
-                        <Text variant="bodyXs" tone="inherit" style={{ opacity: 0.8 }}>{pRole}</Text>
-                      </BlockStack>
+                  {/* Header */}
+                  <div style={{ padding: 16, background: primaryColor, color: 'white', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#fff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {pAvatarType === 'preset' ?
+                        <div style={{ color: 'black', fontSize: 10 }}>{pName}</div> :
+                        (previewSrc ? <img src={previewSrc} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon source={PersonIcon} />)
+                      }
                     </div>
-                    <div style={{ flex: 1, padding: '20px', background: '#f9fafb', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      <div style={{ alignSelf: 'flex-start', background: 'white', padding: '12px', borderRadius: '14px', border: '1px solid #eee', maxWidth: '85%' }}>
-                        <Text variant="bodySm" as="p" style={{ color: textColor }}>{greetingPreview}</Text>
-                      </div>
+                    <div>
+                      <Text fontWeight="bold" tone="inherit">{pName}</Text>
+                      <Text variant="bodyXs" tone="inherit">{pRole}</Text>
                     </div>
-                    <div style={{ padding: '15px', borderTop: '1px solid #eee' }}>
-                      <div style={{ height: '36px', borderRadius: '18px', background: '#f0f0f0', display: 'flex', alignItems: 'center', padding: '0 15px' }}>
-                        <Text variant="bodySm" tone="subdued">Type message...</Text>
-                      </div>
+                  </div>
+                  {/* Body */}
+                  <div style={{ flex: 1, padding: 16, background: '#f9f9f9' }}>
+                    <div style={{ background: 'white', padding: 12, borderRadius: 12, maxWidth: '85%' }}>
+                      <Text>{pWelcome.replace('{name}', pName)}</Text>
                     </div>
                   </div>
                 </div>
-                <InlineStack align="end" gap="200">
-                  <Button icon={ViewIcon}>Full Window</Button>
-                  <div style={{ width: '45px', height: '45px', borderRadius: '50%', background: primaryColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
-                    <Icon source={ChatIcon} />
-                  </div>
-                </InlineStack>
               </BlockStack>
             </Card>
           </Layout.Section>
