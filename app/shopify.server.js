@@ -7,7 +7,7 @@ import {
 } from "@shopify/shopify-app-react-router/server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import prisma from "./db.server";
-import { restResources } from "@shopify/shopify-api/rest/admin/2026-01";
+import { restResources } from "@shopify/shopify-api/rest/admin/2025-10";
 
 // Plan names
 export const PLAN_GROWTH = "Growth Plan";
@@ -17,7 +17,7 @@ const shopify = shopifyApp({
   restResources,
   apiKey: process.env.SHOPIFY_API_KEY,
   apiSecretKey: process.env.SHOPIFY_API_SECRET || "",
-  apiVersion: ApiVersion.January26, // Stable 2026-01
+  apiVersion: ApiVersion.October25, // Latest version with REST support in this SDK
   scopes: process.env.SCOPES?.split(","),
   appUrl: process.env.SHOPIFY_APP_URL || "",
   authPathPrefix: "/auth",
@@ -53,7 +53,7 @@ const shopify = shopifyApp({
 });
 
 export default shopify;
-export const apiVersion = "2026-04"; // Still keeping the constant as requested
+export const apiVersion = "2026-04"; // Constant for external routes if needed
 export const addDocumentResponseHeaders = shopify.addDocumentResponseHeaders;
 export const authenticate = shopify.authenticate;
 export const unauthenticated = shopify.unauthenticated;
