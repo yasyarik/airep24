@@ -22,22 +22,17 @@ import {
 import {
   ChatIcon,
   PersonIcon,
-  SettingsIcon,
   PlusIcon,
   EditIcon,
   SaveIcon,
-  ViewIcon,
   DeleteIcon,
 } from "@shopify/polaris-icons";
 
-import prisma from "../db.server";
-import { authenticate } from "../shopify.server";
-import { indexStoreData } from "../services/indexer.server";
-
 export const loader = async ({ request }) => {
   try {
+    const { authenticate } = await import("../shopify.server");
     const { admin, session } = await authenticate.admin(request);
-    // const { default: prisma } = await import("../db.server"); // Removed, now imported at top
+    const { default: prisma } = await import("../db.server");
 
     // Get persistent stats from DB
     let dbStats = await prisma.storeStats.findUnique({
@@ -53,7 +48,7 @@ export const loader = async ({ request }) => {
         articles: dbStats.articles,
         pages: dbStats.pages,
         policies: dbStats.policies,
-        shippingCountries: 0, // Не храним в StoreStats пока
+        shippingCountries: 0,
         lastIndexed: dbStats.lastIndexed ? dbStats.lastIndexed.toISOString() : null
       };
     } else {
@@ -67,7 +62,6 @@ export const loader = async ({ request }) => {
         }`
       );
       const result = await response.json();
-      console.log("[DASHBOARD] GraphQL Result:", JSON.stringify(result));
 
       stats = {
         products: result.data?.productsCount?.count || 0,
@@ -100,7 +94,11 @@ export const loader = async ({ request }) => {
 
 export const action = async ({ request }) => {
   try {
+    const { authenticate } = await import("../shopify.server");
     const { admin, session } = await authenticate.admin(request);
+    const { default: prisma } = await import("../db.server");
+    const { indexStoreData } = await import("../services/indexer.server");
+
     const formData = await request.formData();
     const intent = formData.get("intent");
 
@@ -116,19 +114,13 @@ export const action = async ({ request }) => {
 };
 
 export default function Index() {
-  const { shop, stats, initialSettings } = useLoaderData();
+  const { stats, initialSettings } = useLoaderData();
   const fetcher = useFetcher();
   const isIndexing = fetcher.state !== "idle";
 
   const [greeting, setGreeting] = useState(initialSettings.greeting);
   const [character, setCharacter] = useState(initialSettings.character);
   const [color, setColor] = useState(initialSettings.color);
-
-  useEffect(() => {
-    if (fetcher.data?.success) {
-      // Можно добавить уведомление (toast)
-    }
-  }, [fetcher.data]);
 
   const [selectedTab, setSelectedTab] = useState(0);
   const handleTabChange = useCallback((selectedTabIndex) => setSelectedTab(selectedTabIndex), []);
@@ -141,13 +133,7 @@ export default function Index() {
 
   return (
     <Page title="AiRep24 Dashboard">
-      <ui-title-bar title="AiRep24 Assistant">
-        <button variant="primary" onClick={() => alert('Saved!')}>Save All Settings</button>
-      </ui-title-bar>
-
       <BlockStack gap="500">
-
-        {/* Quick Stats Banner */}
         <Banner tone="info" hideLinks>
           <div className="flex justify-between items-center w-full">
             <Text as="p" variant="bodyMd">
@@ -166,7 +152,6 @@ export default function Index() {
                     <BlockStack gap="400">
                       <Text variant="headingMd" as="h3">Character Selection</Text>
                       <Text as="p" tone="subdued">Select the personality of your store's AI representative.</Text>
-
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '16px', marginTop: '12px' }}>
                         {['anna', 'ava', 'sofia'].map((name) => (
                           <div
@@ -183,7 +168,6 @@ export default function Index() {
                             }}
                           >
                             <div style={{ width: '80px', height: '80px', margin: '0 auto 8px', borderRadius: '50%', backgroundColor: '#f4f6f8', overflow: 'hidden', border: '1px solid #e1e3e5' }}>
-                              {/* Mock avatar placeholder */}
                               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#6d7175' }}>
                                 <Icon source={PersonIcon} />
                               </div>
@@ -206,7 +190,6 @@ export default function Index() {
                           onChange={setGreeting}
                           multiline={3}
                           autoComplete="off"
-                          helpText="This is the first message your customers will see."
                         />
                         <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
                           <div style={{ flex: 1 }}>
@@ -274,27 +257,19 @@ export default function Index() {
               <Card>
                 <BlockStack gap="400">
                   <Text variant="headingMd" as="h3">Assistant Preview</Text>
-                  <div style={{
-                    border: '1px solid #e1e3e5',
-                    borderRadius: '12px',
-                    overflow: 'hidden',
-                    backgroundColor: '#f4f6f8'
-                  }}>
+                  <div style={{ border: '1px solid #e1e3e5', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#f4f6f8' }}>
                     <div style={{ height: '300px', display: 'flex', flexDirection: 'column' }}>
-                      {/* Chat Header */}
                       <div style={{ backgroundColor: '#ffffff', padding: '12px', borderBottom: '1px solid #e1e3e5', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: '#4F46E5', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Icon source={PersonIcon} />
                         </div>
                         <Text variant="bodySm" fontWeight="bold" as="p">{character.toUpperCase()}</Text>
                       </div>
-                      {/* Chat Content */}
                       <div style={{ flex: 1, padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                         <div style={{ alignSelf: 'flex-start', backgroundColor: '#ffffff', padding: '8px 12px', borderRadius: '12px', border: '1px solid #e1e3e5', maxWidth: '80%' }}>
                           <Text variant="bodySm" as="p">{greeting}</Text>
                         </div>
                       </div>
-                      {/* Chat Input */}
                       <div style={{ backgroundColor: '#ffffff', padding: '12px', borderTop: '1px solid #e1e3e5' }}>
                         <div style={{ height: '32px', border: '1px solid #e1e3e5', borderRadius: '16px', display: 'flex', alignItems: 'center', padding: '0 12px' }}>
                           <Text variant="bodySm" tone="subdued" as="p">Type a message...</Text>
@@ -330,12 +305,8 @@ export default function Index() {
                         <Text variant="bodySm" fontWeight="bold" as="p">{stats.articles}</Text>
                       </InlineStack>
                       <InlineStack align="space-between">
-                        <Text variant="bodySm" as="p">🚚 Shipping Methods</Text>
-                        <Text variant="bodySm" fontWeight="bold" as="p">{stats.shippingCountries} countries</Text>
-                      </InlineStack>
-                      <InlineStack align="space-between">
-                        <Text variant="bodySm" as="p">📄 Store Policies</Text>
-                        <Text variant="bodySm" fontWeight="bold" as="p">{stats.policies}</Text>
+                        <Text variant="bodySm" as="p">📄 Pages & Policies</Text>
+                        <Text variant="bodySm" fontWeight="bold" as="p">{stats.pages + stats.policies}</Text>
                       </InlineStack>
                     </BlockStack>
                   </Box>
