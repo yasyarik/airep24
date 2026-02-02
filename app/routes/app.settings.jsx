@@ -11,9 +11,9 @@ import {
     Box,
     Divider,
     Banner,
-    List,
+    Icon,
 } from "@shopify/polaris";
-import { SaveIcon, ChatIcon } from "@shopify/polaris-icons";
+import { SaveIcon, ChatIcon, SettingsIcon } from "@shopify/polaris-icons";
 
 export default function Settings() {
     const [botToken, setBotToken] = useState("");
@@ -25,7 +25,7 @@ export default function Settings() {
     }, []);
 
     return (
-        <Page title="Settings" backAction={{ content: "Dashboard", url: "/app" }}>
+        <Page title="Advanced Settings" backAction={{ content: "Dashboard", url: "/app" }}>
             <BlockStack gap="500">
                 <Layout>
                     {/* Telegram Integration */}
@@ -34,10 +34,12 @@ export default function Settings() {
                             <BlockStack gap="400">
                                 <InlineStack align="space-between">
                                     <BlockStack gap="100">
-                                        <Text variant="headingMd" as="h2">Telegram Notifications</Text>
+                                        <InlineStack gap="200" blockAlign="center">
+                                            <Icon source={ChatIcon} tone="success" />
+                                            <Text variant="headingMd" as="h2">Telegram Notifications</Text>
+                                        </InlineStack>
                                         <Text as="p" tone="subdued">Receive alerts when a customer needs manual help.</Text>
                                     </BlockStack>
-                                    <ChatIcon color="success" />
                                 </InlineStack>
 
                                 <Divider />
@@ -51,7 +53,7 @@ export default function Settings() {
                                         autoComplete="off"
                                         helpText={
                                             <Text as="span" tone="subdued">
-                                                Create a bot via <a href="https://t.me/botfather" target="_blank">@BotFather</a> to get your token.
+                                                Create a bot via <a href="https://t.me/botfather" target="_blank" style={{ color: '#008060' }}>@BotFather</a> to get your token.
                                             </Text>
                                         }
                                     />
@@ -71,14 +73,16 @@ export default function Settings() {
                         </Card>
                     </Layout.Section>
 
-                    {/* AI Knowledge Base */}
+                    {/* AI Knowledge Base Expansion */}
                     <Layout.Section>
                         <Card>
                             <BlockStack gap="400">
-                                <Text variant="headingMd" as="h2">AI Knowledge Base</Text>
+                                <InlineStack gap="200" blockAlign="center">
+                                    <Icon source={SettingsIcon} tone="info" />
+                                    <Text variant="headingMd" as="h2">Extra Training Data</Text>
+                                </InlineStack>
                                 <Text as="p" tone="subdued">
-                                    The AI automatically learns from your product descriptions and collections.
-                                    Add extra context below (shipping rules, return policy, brand story).
+                                    The AI automatically learns from your catalog. Use this field for unique rules, brand story, or temporary updates.
                                 </Text>
 
                                 <TextField
@@ -86,13 +90,13 @@ export default function Settings() {
                                     value={kbExtra}
                                     onChange={setKbExtra}
                                     multiline={6}
-                                    placeholder="Example: We offer free world-wide shipping on orders over $100. Returns are accepted within 30 days..."
+                                    placeholder="Example: We offer free world-wide shipping on orders over $100. Our warehouse is closed on weekends."
                                     autoComplete="off"
                                 />
 
                                 <Banner tone="info" hideLinks>
                                     <Text as="p">
-                                        AI Training happens automatically every 24 hours. You can force a refresh if you've made significant changes.
+                                        Manual refresh on Dashboard will update the brain immediately with these new settings.
                                     </Text>
                                 </Banner>
                             </BlockStack>

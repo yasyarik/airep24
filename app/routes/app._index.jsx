@@ -18,6 +18,9 @@ import {
   Tabs,
   Divider,
   FormLayout,
+  RangeSlider,
+  Checkbox,
+  Modal,
 } from "@shopify/polaris";
 import {
   ChatIcon,
@@ -26,6 +29,7 @@ import {
   EditIcon,
   SaveIcon,
   DeleteIcon,
+  ViewIcon,
 } from "@shopify/polaris-icons";
 
 export const loader = async ({ request }) => {
@@ -77,16 +81,26 @@ export const loader = async ({ request }) => {
       };
     }
 
+    // Get configs
+    let widgetConfig = await prisma.widgetConfig.findUnique({ where: { shopDomain: session.shop } });
+    if (!widgetConfig) {
+      widgetConfig = await prisma.widgetConfig.create({
+        data: { shopDomain: session.shop }
+      });
+    }
+
+    let characterConfig = await prisma.characterConfig.findUnique({ where: { shopDomain: session.shop } });
+    if (!characterConfig) {
+      characterConfig = await prisma.characterConfig.create({
+        data: { shopDomain: session.shop }
+      });
+    }
+
     return {
       shop: session.shop,
       stats,
-      initialSettings: {
-        greeting: "Hi! I'm Anna, your personal shopping assistant. How can I help you?",
-        color: "#4F46E5",
-        character: "anna",
-        position: "bottom-right",
-        language: "en"
-      }
+      widgetConfig,
+      characterConfig
     };
   } catch (error) {
     console.error("[LOADER ERROR]:", error);
@@ -109,6 +123,24 @@ export const action = async ({ request }) => {
       return { success: result.success, message: result.success ? "Successfully indexed store data!" : "Indexing failed." };
     }
 
+    if (intent === "saveWidget") {
+      const data = JSON.parse(formData.get("data"));
+      await prisma.widgetConfig.update({
+        where: { shopDomain: session.shop },
+        data
+      });
+      return { success: true };
+    }
+
+    if (intent === "saveCharacter") {
+      const data = JSON.parse(formData.get("data"));
+      await prisma.characterConfig.update({
+        where: { shopDomain: session.shop },
+        data
+      });
+      return { success: true };
+    }
+
     if (intent === "toggleAutoSync") {
       const current = formData.get("current") === "true";
       await prisma.storeStats.update({
@@ -126,16 +158,65 @@ export const action = async ({ request }) => {
 };
 
 export default function Index() {
-  const { stats, initialSettings } = useLoaderData();
+  const { stats, widgetConfig, characterConfig } = useLoaderData();
   const fetcher = useFetcher();
   const isIndexing = fetcher.state !== "idle";
+  const isSaving = fetcher.state !== "idle" && fetcher.formData?.get("intent")?.startsWith("save");
 
-  const [greeting, setGreeting] = useState(initialSettings.greeting);
-  const [character, setCharacter] = useState(initialSettings.character);
-  const [color, setColor] = useState(initialSettings.color);
+  // Character States
+  const [charName, setCharName] = useState(characterConfig.name);
+  const [charRole, setCharRole] = useState(characterConfig.role);
+  const [charWelcome, setCharWelcome] = useState(characterConfig.welcomeMessage);
+  const [charInstructions, setCharInstructions] = useState(characterConfig.instructions);
+
+  // Widget States
+  const [primaryColor, setPrimaryColor] = useState(widgetConfig.primaryColor);
+  const [bgColor, setBgColor] = useState(widgetConfig.backgroundColor);
+  const [textColor, setTextColor] = useState(widgetConfig.textColor);
+  const [borderRadius, setBorderRadius] = useState(widgetConfig.borderRadius);
+  const [shadow, setShadow] = useState(widgetConfig.shadow);
+  const [opacity, setOpacity] = useState(widgetConfig.opacity);
+  const [position, setPosition] = useState(widgetConfig.position);
+  const [minimizedStyle, setMinimizedStyle] = useState(widgetConfig.minimizedStyle);
 
   const [selectedTab, setSelectedTab] = useState(0);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
+
   const handleTabChange = useCallback((selectedTabIndex) => setSelectedTab(selectedTabIndex), []);
+
+  const handleSaveWidget = () => {
+    fetcher.submit(
+      {
+        intent: "saveWidget",
+        data: JSON.stringify({
+          primaryColor,
+          backgroundColor: bgColor,
+          textColor,
+          borderRadius,
+          shadow,
+          opacity,
+          position,
+          minimizedStyle
+        })
+      },
+      { method: "post" }
+    );
+  };
+
+  const handleSaveCharacter = () => {
+    fetcher.submit(
+      {
+        intent: "saveCharacter",
+        data: JSON.stringify({
+          name: charName,
+          role: charRole,
+          welcomeMessage: charWelcome,
+          instructions: charInstructions
+        })
+      },
+      { method: "post" }
+    );
+  };
 
   const tabs = [
     { id: 'character', content: 'Character', accessibilityLabel: 'Character Settings', panelID: 'character-panel' },
@@ -147,7 +228,7 @@ export default function Index() {
     <Page title="AiRep24 Dashboard">
       <BlockStack gap="500">
         <Banner tone="info" hideLinks>
-          <div className="flex justify-between items-center w-full">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <Text as="p" variant="bodyMd">
               Your AI Assistant is currently <strong>Active</strong> in your store.
             </Text>
@@ -162,72 +243,105 @@ export default function Index() {
                 <Box padding="500">
                   {selectedTab === 0 && (
                     <BlockStack gap="400">
-                      <Text variant="headingMd" as="h3">Character Selection</Text>
-                      <Text as="p" tone="subdued">Select the personality of your store's AI representative.</Text>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '16px', marginTop: '12px' }}>
-                        {['anna', 'ava', 'sofia'].map((name) => (
-                          <div
-                            key={name}
-                            onClick={() => setCharacter(name)}
-                            style={{
-                              cursor: 'pointer',
-                              borderRadius: '12px',
-                              border: character === name ? '2px solid #008060' : '1px solid #e1e3e5',
-                              padding: '12px',
-                              textAlign: 'center',
-                              backgroundColor: character === name ? '#f0fdf4' : 'white',
-                              transition: 'all 0.2s'
-                            }}
-                          >
-                            <div style={{ width: '80px', height: '80px', margin: '0 auto 8px', borderRadius: '50%', backgroundColor: '#f4f6f8', overflow: 'hidden', border: '1px solid #e1e3e5' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#6d7175' }}>
-                                <Icon source={PersonIcon} />
-                              </div>
-                            </div>
-                            <Text variant="bodyMd" fontWeight="bold" as="p">{name.toUpperCase()}</Text>
-                            <Badge tone={character === name ? 'success' : 'info'}>{character === name ? 'Selected' : 'Available'}</Badge>
-                          </div>
-                        ))}
-                      </div>
+                      <InlineStack align="space-between">
+                        <Text variant="headingMd" as="h3">AI Character Appearance</Text>
+                        <Button variant="primary" onClick={handleSaveCharacter} loading={isSaving && fetcher.formData?.get("intent") === "saveCharacter"}>Save Changes</Button>
+                      </InlineStack>
+
+                      <FormLayout>
+                        <TextField label="Assistant Name" value={charName} onChange={setCharName} autoComplete="off" />
+                        <TextField label="Assistant Role / Title" value={charRole} onChange={setCharRole} placeholder="e.g. Shopping Assistant" autoComplete="off" />
+                        <TextField label="Welcome Message" value={charWelcome} onChange={setCharWelcome} multiline={2} autoComplete="off" />
+                        <TextField
+                          label="Detailed Instructions for AI"
+                          value={charInstructions}
+                          onChange={setCharInstructions}
+                          multiline={6}
+                          helpText="Give specific instructions on how the AI should behave, what tone to use, and what information to prioritize."
+                          autoComplete="off"
+                        />
+                      </FormLayout>
                     </BlockStack>
                   )}
 
                   {selectedTab === 1 && (
                     <BlockStack gap="400">
-                      <Text variant="headingMd" as="h3">Widget Customization</Text>
+                      <InlineStack align="space-between">
+                        <Text variant="headingMd" as="h3">Widget Customization</Text>
+                        <Button variant="primary" onClick={handleSaveWidget} loading={isSaving && fetcher.formData?.get("intent") === "saveWidget"}>Save Changes</Button>
+                      </InlineStack>
+
                       <FormLayout>
-                        <TextField
-                          label="Initial Greeting Message"
-                          value={greeting}
-                          onChange={setGreeting}
-                          multiline={3}
-                          autoComplete="off"
-                        />
-                        <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
-                          <div style={{ flex: 1 }}>
-                            <Text variant="bodyMd" as="p">Brand Color</Text>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px' }}>
-                              <input
-                                type="color"
-                                value={color}
-                                onChange={(e) => setColor(e.target.value)}
-                                style={{ width: '40px', height: '40px', border: '1px solid #e1e3e5', borderRadius: '4px', padding: '0' }}
-                              />
-                              <Text variant="bodyMd" as="p">{color}</Text>
-                            </div>
-                          </div>
-                          <div style={{ flex: 1 }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                          <BlockStack gap="200">
+                            <Text variant="bodyMd" as="p">Colors</Text>
+                            <InlineStack gap="300">
+                              <BlockStack gap="100">
+                                <Text variant="bodyXs" tone="subdued">Primary</Text>
+                                <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} style={{ width: '50px', height: '30px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                              </BlockStack>
+                              <BlockStack gap="100">
+                                <Text variant="bodyXs" tone="subdued">Background</Text>
+                                <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} style={{ width: '50px', height: '30px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                              </BlockStack>
+                              <BlockStack gap="100">
+                                <Text variant="bodyXs" tone="subdued">Text</Text>
+                                <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} style={{ width: '50px', height: '30px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                              </BlockStack>
+                            </InlineStack>
+                          </BlockStack>
+
+                          <BlockStack gap="200">
                             <Select
-                              label="Desktop Position"
+                              label="Minimized Style"
                               options={[
-                                { label: 'Bottom Right', value: 'bottom-right' },
-                                { label: 'Bottom Left', value: 'bottom-left' },
+                                { label: 'Icon Only', value: 'icon' },
+                                { label: 'Bubble with Text', value: 'bubble' },
+                                { label: 'Floating Name', value: 'text' },
                               ]}
-                              value="bottom-right"
-                              onChange={() => { }}
+                              value={minimizedStyle}
+                              onChange={setMinimizedStyle}
                             />
-                          </div>
+                          </BlockStack>
                         </div>
+
+                        <Divider />
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                          <RangeSlider
+                            label="Border Radius"
+                            value={borderRadius}
+                            onChange={setBorderRadius}
+                            min={0}
+                            max={30}
+                            output
+                          />
+                          <RangeSlider
+                            label="Opacity (%)"
+                            value={opacity}
+                            onChange={setOpacity}
+                            min={10}
+                            max={100}
+                            output
+                          />
+                        </div>
+
+                        <InlineStack gap="500">
+                          <Checkbox
+                            label="Enable Shadow"
+                            checked={shadow}
+                            onChange={setShadow}
+                          />
+                          <Select
+                            label="Position"
+                            options={[
+                              { label: 'Bottom Right', value: 'bottom-right' },
+                              { label: 'Bottom Left', value: 'bottom-left' },
+                            ]}
+                            value={position}
+                            onChange={setPosition}
+                          />
+                        </InlineStack>
                       </FormLayout>
                     </BlockStack>
                   )}
@@ -243,17 +357,19 @@ export default function Index() {
                           { label: "Shipping Info", q: "What are your shipping rates?" },
                           { label: "Return Policy", q: "How do I return my order?" }
                         ].map((faq, i) => (
-                          <Card key={i} sectioned subdued>
-                            <InlineStack align="space-between">
-                              <BlockStack gap="100">
-                                <Text variant="bodyMd" fontWeight="bold" as="p">{faq.label}</Text>
-                                <Text variant="bodySm" tone="subdued" as="p">{faq.q}</Text>
-                              </BlockStack>
-                              <InlineStack gap="200">
-                                <Button icon={EditIcon} variant="tertiary" />
-                                <Button icon={DeleteIcon} tone="critical" variant="tertiary" />
+                          <Card key={i} subdued>
+                            <Box padding="300">
+                              <InlineStack align="space-between">
+                                <BlockStack gap="100">
+                                  <Text variant="bodyMd" fontWeight="bold" as="p">{faq.label}</Text>
+                                  <Text variant="bodySm" tone="subdued" as="p">{faq.q}</Text>
+                                </BlockStack>
+                                <InlineStack gap="200">
+                                  <Button icon={EditIcon} variant="tertiary" />
+                                  <Button icon={DeleteIcon} tone="critical" variant="tertiary" />
+                                </InlineStack>
                               </InlineStack>
-                            </InlineStack>
+                            </Box>
                           </Card>
                         ))}
                       </div>
@@ -268,35 +384,67 @@ export default function Index() {
             <BlockStack gap="500">
               <Card>
                 <BlockStack gap="400">
-                  <Text variant="headingMd" as="h3">Assistant Preview</Text>
-                  <div style={{ border: '1px solid #e1e3e5', borderRadius: '12px', overflow: 'hidden', backgroundColor: '#f4f6f8' }}>
-                    <div style={{ height: '300px', display: 'flex', flexDirection: 'column' }}>
-                      <div style={{ backgroundColor: '#ffffff', padding: '12px', borderBottom: '1px solid #e1e3e5', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', backgroundColor: color, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Text variant="headingMd" as="h3">Live Preview</Text>
+                  <div
+                    style={{
+                      border: '1px solid #e1e3e5',
+                      borderRadius: `${borderRadius}px`,
+                      overflow: 'hidden',
+                      backgroundColor: bgColor,
+                      boxShadow: shadow ? '0 10px 25px rgba(0,0,0,0.1)' : 'none',
+                      opacity: opacity / 100,
+                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+                    }}
+                  >
+                    <div style={{ height: '350px', display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ backgroundColor: primaryColor, padding: '16px', color: 'white', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <Icon source={PersonIcon} />
                         </div>
-                        <Text variant="bodySm" fontWeight="bold" as="p">{character.toUpperCase()}</Text>
+                        <BlockStack gap="0">
+                          <Text variant="bodyMd" fontWeight="bold" as="p" tone="inherit">{charName}</Text>
+                          <Text variant="bodyXs" as="p" tone="inherit" style={{ opacity: 0.8 }}>{charRole}</Text>
+                        </BlockStack>
                       </div>
-                      <div style={{ flex: 1, padding: '12px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                        <div style={{ alignSelf: 'flex-start', backgroundColor: '#ffffff', padding: '8px 12px', borderRadius: '12px', border: '1px solid #e1e3e5', maxWidth: '80%' }}>
-                          <Text variant="bodySm" as="p">{greeting}</Text>
+                      <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', background: '#f9fafb' }}>
+                        <div style={{ alignSelf: 'flex-start', backgroundColor: 'white', padding: '10px 14px', borderRadius: '14px', border: '1px solid #e1e3e5', maxWidth: '85%', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                          <Text variant="bodySm" as="p" style={{ color: textColor }}>{charWelcome}</Text>
+                        </div>
+                        <div style={{ alignSelf: 'flex-end', backgroundColor: primaryColor, padding: '10px 14px', borderRadius: '14px', maxWidth: '85%', color: 'white' }}>
+                          <Text variant="bodySm" as="p">How much is shipping?</Text>
                         </div>
                       </div>
-                      <div style={{ backgroundColor: '#ffffff', padding: '12px', borderTop: '1px solid #e1e3e5' }}>
-                        <div style={{ height: '32px', border: '1px solid #e1e3e5', borderRadius: '16px', display: 'flex', alignItems: 'center', padding: '0 12px' }}>
+                      <div style={{ backgroundColor: 'white', padding: '12px', borderTop: '1px solid #e1e3e5' }}>
+                        <div style={{ height: '36px', border: '1px solid #e1e3e5', borderRadius: '18px', display: 'flex', alignItems: 'center', padding: '0 16px', background: '#f9fafb' }}>
                           <Text variant="bodySm" tone="subdued" as="p">Type a message...</Text>
                         </div>
                       </div>
                     </div>
                   </div>
-                  <Button fullWidth>View Full Preview</Button>
+
+                  <InlineStack gap="200" wrap={false}>
+                    <Button fullWidth icon={ViewIcon} onClick={() => setIsPreviewModalOpen(true)}>Full Preview</Button>
+                    <div style={{
+                      width: '40px',
+                      height: '40px',
+                      borderRadius: '50%',
+                      backgroundColor: primaryColor,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
+                      color: 'white',
+                      cursor: 'pointer'
+                    }}>
+                      <Icon source={ChatIcon} />
+                    </div>
+                  </InlineStack>
                 </BlockStack>
               </Card>
 
               <Card>
                 <BlockStack gap="300">
                   <Text variant="headingMd" as="h3">Knowledge Base Status</Text>
-                  <Text as="p" tone="subdued">AI has successfully indexed your store data:</Text>
 
                   <Box paddingBlock="200">
                     <BlockStack gap="100">
@@ -385,6 +533,60 @@ export default function Index() {
           </Layout.Section>
         </Layout>
       </BlockStack>
+
+      <Modal
+        open={isPreviewModalOpen}
+        onClose={() => setIsPreviewModalOpen(false)}
+        title="Full Assistant Preview"
+        primaryAction={{
+          content: 'Close',
+          onAction: () => setIsPreviewModalOpen(false),
+        }}
+      >
+        <Modal.Section>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px', background: '#f4f6f8' }}>
+            <div
+              style={{
+                width: '400px',
+                border: '1px solid #e1e3e5',
+                borderRadius: `${borderRadius}px`,
+                overflow: 'hidden',
+                backgroundColor: bgColor,
+                boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
+                opacity: opacity / 100
+              }}
+            >
+              <div style={{ height: '550px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ backgroundColor: primaryColor, padding: '20px', color: 'white', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{ width: '45px', height: '45px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon source={PersonIcon} />
+                  </div>
+                  <BlockStack gap="0">
+                    <Text variant="headingMd" as="h3" tone="inherit">{charName}</Text>
+                    <Text variant="bodySm" as="p" tone="inherit" style={{ opacity: 0.8 }}>{charRole}</Text>
+                  </BlockStack>
+                </div>
+                <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', background: '#f9fafb', overflowY: 'auto' }}>
+                  <div style={{ alignSelf: 'flex-start', backgroundColor: 'white', padding: '12px 16px', borderRadius: '16px', border: '1px solid #e1e3e5', maxWidth: '85%' }}>
+                    <Text variant="bodyMd" as="p" style={{ color: textColor }}>{charWelcome}</Text>
+                  </div>
+                  <div style={{ alignSelf: 'flex-end', backgroundColor: primaryColor, padding: '12px 16px', borderRadius: '16px', maxWidth: '85%', color: 'white' }}>
+                    <Text variant="bodyMd" as="p">Tell me more about your products.</Text>
+                  </div>
+                  <div style={{ alignSelf: 'flex-start', backgroundColor: 'white', padding: '12px 16px', borderRadius: '16px', border: '1px solid #e1e3e5', maxWidth: '85%' }}>
+                    <Text variant="bodyMd" as="p" style={{ color: textColor }}>I'd be happy to! We have a wide range of high-quality items designed to make your life easier...</Text>
+                  </div>
+                </div>
+                <div style={{ backgroundColor: 'white', padding: '20px', borderTop: '1px solid #e1e3e5' }}>
+                  <div style={{ height: '45px', border: '1px solid #e1e3e5', borderRadius: '22px', display: 'flex', alignItems: 'center', padding: '0 20px', background: '#f9fafb' }}>
+                    <Text variant="bodyMd" tone="subdued" as="p">Type your message here...</Text>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </Modal.Section>
+      </Modal>
     </Page>
   );
 }

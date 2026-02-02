@@ -130,3 +130,28 @@ model StoreStats {
   autoSync     Boolean  @default(true)
   lastIndexed  DateTime @default(now())
 }
+
+model WidgetConfig {
+  id              String   @id @default(uuid())
+  shopDomain      String   @unique
+  primaryColor    String   @default("#4F46E5")
+  backgroundColor String   @default("#FFFFFF")
+  textColor       String   @default("#1F2937")
+  borderRadius    Int      @default(12)
+  shadow          Boolean  @default(true)
+  opacity         Int      @default(100)
+  position        String   @default("bottom-right") // bottom-right, bottom-left
+  minimizedStyle  String   @default("icon") // icon, bubble, text
+  updatedAt       DateTime @updatedAt
+}
+
+model CharacterConfig {
+  id           String   @id @default(uuid())
+  shopDomain   String   @unique
+  name         String   @default("Anna")
+  avatarUrl    String?
+  role         String   @default("Shopping Assistant")
+  welcomeMessage String @default("Hi! I'm Anna, your local AI shopping assistant. How can I help you?")
+  instructions String   @default("You are a helpful and friendly shopping assistant for our Shopify store.")
+  updatedAt    DateTime @updatedAt
+}
