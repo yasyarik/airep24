@@ -233,7 +233,7 @@ export default function Index() {
                 <BlockStack gap="200">
                   <Text variant="headingMd" as="h3">Knowledge Base</Text>
                   <Text as="p" variant="bodySm" tone="subdued">AI is currently trained on 248 products from your catalog.</Text>
-                  <Button variant="primary" icon={SaveIcon}>Re-train Assistant</Button>
+                  <Button variant="primary" icon={SaveIcon} url="/app/settings">Re-train Assistant</Button>
                 </BlockStack>
               </Card>
             </BlockStack>
