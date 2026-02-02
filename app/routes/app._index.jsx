@@ -41,11 +41,9 @@ export const loader = async ({ request }) => {
   console.log("DEBUG: START LOADER", request.url);
   try {
     const { admin, session } = await authenticate.admin(request);
-    console.log("DEBUG: admin object type is", typeof admin);
-    console.log("DEBUG: admin keys:", Object.keys(admin || {}));
+    await fs.appendFile("/tmp/airep_debug.log", `[${new Date().toISOString()}] Admin Keys: ${Object.keys(admin || {}).join(", ")}\n`);
     if (admin) {
-      console.log("DEBUG: has graphql?", typeof admin.graphql);
-      console.log("DEBUG: has rest?", typeof admin.rest);
+      await fs.appendFile("/tmp/airep_debug.log", `Graphql: ${typeof admin.graphql}, Rest: ${typeof admin.rest}\n`);
     }
     if (admin && admin.rest) {
       console.log("Admin REST resources:", Object.keys(admin.rest.resources || {}));
