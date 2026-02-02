@@ -182,8 +182,8 @@ export const loader = async ({ request }) => {
 
     return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled };
   } catch (error) {
-    console.error("[LOADER ERROR]:", error.message);
-    throw error;
+    console.error("[LOADER ERROR]:", error);
+    return { error: error.message, stack: error.stack };
   }
 };
 
@@ -298,11 +298,24 @@ export const action = async ({ request }) => {
 };
 
 export default function Index() {
-  const { stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled } = useLoaderData();
+  const { stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled, error, stack } = useLoaderData();
   const fetcher = useFetcher();
   const uploadFetcher = useFetcher();
 
-  const [selectedProfileId, setSelectedProfileId] = useState(profiles.find(p => p.isActive)?.id || profiles[0]?.id);
+  if (error) {
+    return (
+      <Page>
+        <Banner tone="critical" title="App Error">
+          <Text>{error}</Text>
+          <Box paddingBlockStart="200">
+            <pre style={{ overflow: 'auto', maxHeight: '400px', fontSize: '12px' }}>{stack}</pre>
+          </Box>
+        </Banner>
+      </Page>
+    );
+  }
+
+  const [selectedProfileId, setSelectedProfileId] = useState(profiles?.find(p => p.isActive)?.id || profiles?.[0]?.id);
   const currentProfile = useMemo(() => profiles.find(p => p.id === selectedProfileId), [profiles, selectedProfileId]);
 
   // Form States
