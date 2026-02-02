@@ -154,6 +154,7 @@ export const action = async ({ request }) => {
       const id = formData.get("id");
       const name = formData.get("name");
       const role = formData.get("role");
+      const tone = formData.get("tone");
       const welcomeMessage = formData.get("welcomeMessage");
       const instructions = formData.get("instructions");
       const avatarType = formData.get("avatarType");
@@ -163,7 +164,7 @@ export const action = async ({ request }) => {
       await prisma.characterProfile.update({
         where: { id },
         data: {
-          name, role, welcomeMessage, instructions,
+          name, role, tone, welcomeMessage, instructions,
           avatarType, avatarId,
           animationConfig
         }
@@ -198,6 +199,7 @@ export const action = async ({ request }) => {
           shopDomain: session.shop,
           name: "Custom Persona",
           role: "Assistant",
+          tone: "friendly",
           avatarType: 'image',
           animationConfig: JSON.stringify({ idle: { frames: [], speed: 500 }, greeting: { frames: [], speed: 500 } })
         }
@@ -256,6 +258,7 @@ export default function Index() {
   // Form States
   const [pName, setPName] = useState("");
   const [pRole, setPRole] = useState("");
+  const [pTone, setPTone] = useState("friendly");
   const [pWelcome, setPWelcome] = useState("");
   const [pInstructions, setPInstructions] = useState("");
   const [pAvatarType, setPAvatarType] = useState("preset");
@@ -285,6 +288,7 @@ export default function Index() {
     if (currentProfile) {
       setPName(currentProfile.name);
       setPRole(currentProfile.role);
+      setPTone(currentProfile.tone || "friendly");
       setPWelcome(currentProfile.welcomeMessage);
       setPInstructions(currentProfile.instructions);
       setPAvatarType(currentProfile.avatarType);
@@ -310,6 +314,7 @@ export default function Index() {
         id: selectedProfileId,
         name: pName,
         role: pRole,
+        tone: pTone,
         welcomeMessage: pWelcome,
         instructions: pInstructions,
         avatarType: pAvatarType,
@@ -472,6 +477,7 @@ export default function Index() {
                               <TextField label="Name" value={pName} onChange={setPName} autoComplete="off" />
                               <TextField label="Role" value={pRole} onChange={setPRole} autoComplete="off" />
                             </FormLayout.Group>
+                            <Select label="Communication Tone" options={[{ label: 'Friendly (Default)', value: 'friendly' }, { label: 'Professional (Corporate)', value: 'professional' }, { label: 'Playful (Fun)', value: 'playful' }, { label: 'Sophisticated (Luxury)', value: 'sophisticated' }, { label: 'Empathetic (Support)', value: 'empathetic' }]} value={pTone} onChange={setPTone} />
 
                             {/* Avatar Config Section */}
                             <Card title="Avatar Configuration" sectioned>

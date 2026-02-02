@@ -157,6 +157,7 @@ model CharacterProfile {
   
   // JSON to store animation states: { idle: { frames: [assetId1, assetId2], speed: 500 }, greeting: { ... } }
   animationConfig String   @default("{}") 
+  tone            String   @default("friendly")
   
   role            String   @default("Shopping Assistant")
   welcomeMessage  String   @default("Hi! I'm {name}, your local AI shopping assistant. How can I help you?")
