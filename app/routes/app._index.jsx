@@ -22,6 +22,7 @@ import {
   Checkbox,
   Modal,
   DropZone,
+  InlineGrid,
 } from "@shopify/polaris";
 import {
   ChatIcon,
@@ -134,36 +135,35 @@ export const loader = async ({ request }) => {
     const activeChatCount = await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } });
 
     // 5. Check True Theme Status (App Embed)
+    // 5. Check True Theme Status (App Embed)
     let themeEnabled = false;
     try {
-      // Need Rest Resources
-      const Theme = await admin.rest.resources.Theme.all({ session });
-      const mainTheme = Theme.data ? Theme.data.find(t => t.role === 'main') : null;
+      if (admin.rest) {
+        const ThemeResource = admin.rest.resources.Theme;
+        const themes = await ThemeResource.all({ session });
+        const mainThemeArray = themes.data || (Array.isArray(themes) ? themes : []);
+        const mainTheme = mainThemeArray.find(t => t.role === 'main');
 
-      if (mainTheme) {
-        const asset = await admin.rest.resources.Asset.all({
-          session,
-          theme_id: mainTheme.id,
-          asset: { key: 'config/settings_data.json' }
-        });
+        if (mainTheme) {
+          const assetResponse = await admin.rest.resources.Asset.all({
+            session,
+            theme_id: mainTheme.id,
+            asset: { key: 'config/settings_data.json' }
+          });
 
-        // Asset.all returns array, but with param it might be filtered. 
-        // Normally Asset.find isn't available on resource class directly in some versions, but 'all' works.
-        // The response structure depends on library version. 
-        // Usually `asset[0].value`.
+          const settingsAsset = assetResponse.data ? assetResponse.data[0] : (Array.isArray(assetResponse) ? assetResponse[0] : null);
 
-        if (asset && asset.data && asset.data.length > 0) {
-          const json = JSON.parse(asset.data[0].value);
-          const blocks = json.current?.blocks || {};
+          if (settingsAsset && settingsAsset.value) {
+            const json = JSON.parse(settingsAsset.value);
+            const blocks = json.current?.blocks || {};
+            // Look for our block in the settings
+            themeEnabled = Object.values(blocks).some(block =>
+              block.type?.includes('airep24-widget') && !block.disabled
+            );
 
-          // Look for our widget
-          for (const key in blocks) {
-            const block = blocks[key];
-            if (block.type) console.log("Checking block type:", block.type);
-            if (block.type && block.type.includes("airep24-widget")) {
-              themeEnabled = !block.disabled;
-              if (themeEnabled) console.log("MATCH FOUND AND ENABLED!");
-              break;
+            // Log for debugging if not found
+            if (!themeEnabled) {
+              console.log("App Embed block not found enabled in settings_data.json. Blocks:", Object.keys(blocks).length);
             }
           }
         }
@@ -278,8 +278,8 @@ export const action = async ({ request }) => {
     }
 
     if (intent === "index") {
-      const result = await indexStoreData(session, session.shop, prisma); // simplified call
-      return { success: true };
+      const result = await indexStoreData(admin, session.shop, prisma);
+      return { success: result.success, indexResult: result };
     }
 
     return null;
@@ -476,24 +476,68 @@ export default function Index() {
           <Text as="p"><strong>{enableStatus.text}</strong></Text>
         </Banner>
 
-        <Card title="Knowledge Base (AI Training Data)">
+        <Card>
           <BlockStack gap="400">
-            <Text as="p" tone="subdued">This information is common for all AI personas. It includes your products, pages, and store policies.</Text>
             <InlineStack align="space-between">
+              <Text variant="headingMd" as="h2">Knowledge Base & Sync</Text>
+              <Badge tone={stats.lastIndexed ? "success" : "attention"}>
+                {stats.lastIndexed ? "Synced" : "Sync Required"}
+              </Badge>
+            </InlineStack>
+
+            <Text as="p" tone="subdued">This information is shared across all AI personas. It includes your products, pages, articles, and store policies.</Text>
+
+            <InlineGrid columns={3} gap="200">
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                <BlockStack align="center">
+                  <Text variant="headingLg" as="p">{stats.products}</Text>
+                  <Text variant="bodySm" tone="subdued">Products</Text>
+                </BlockStack>
+              </Box>
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                <BlockStack align="center">
+                  <Text variant="headingLg" as="p">{stats.collections}</Text>
+                  <Text variant="bodySm" tone="subdued">Collections</Text>
+                </BlockStack>
+              </Box>
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                <BlockStack align="center">
+                  <Text variant="headingLg" as="p">{stats.pages}</Text>
+                  <Text variant="bodySm" tone="subdued">Pages</Text>
+                </BlockStack>
+              </Box>
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                <BlockStack align="center">
+                  <Text variant="headingLg" as="p">{stats.articles}</Text>
+                  <Text variant="bodySm" tone="subdued">Blog Posts</Text>
+                </BlockStack>
+              </Box>
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                <BlockStack align="center">
+                  <Text variant="headingLg" as="p">{stats.policies}</Text>
+                  <Text variant="bodySm" tone="subdued">Policies</Text>
+                </BlockStack>
+              </Box>
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                <BlockStack align="center">
+                  <Text variant="headingLg" as="p">{stats.discounts}</Text>
+                  <Text variant="bodySm" tone="subdued">Discounts</Text>
+                </BlockStack>
+              </Box>
+            </InlineGrid>
+
+            <InlineStack align="space-between" blockAlign="center">
               <BlockStack gap="100">
-                <InlineStack gap="200">
-                  <Badge tone="info">{stats.products} Products</Badge>
-                  <Badge tone="info">{stats.collections} Collections</Badge>
-                  <Badge tone="info">{stats.pages} Pages</Badge>
-                </InlineStack>
-                <Text variant="bodySm" tone="subdued">Last Synced: {stats.lastIndexed ? new Date(stats.lastIndexed).toLocaleString() : "Never"}</Text>
+                <Text variant="bodySm" tone="subdued">
+                  Last Update: {stats.lastIndexed ? new Date(stats.lastIndexed).toLocaleString() : "Never"}
+                </Text>
               </BlockStack>
               <Button
                 variant="primary"
                 onClick={() => fetcher.submit({ intent: 'index' }, { method: 'post' })}
                 loading={fetcher.state !== 'idle'}
               >
-                Sync Store Data
+                Sync All Data Now
               </Button>
             </InlineStack>
           </BlockStack>
