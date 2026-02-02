@@ -31,52 +31,57 @@ import {
 } from "@shopify/polaris-icons";
 
 export const loader = async ({ request }) => {
-  const { authenticate } = await import("../shopify.server");
-  const { admin, session } = await authenticate.admin(request);
-  const { default: prisma } = await import("../db.server");
+  try {
+    const { authenticate } = await import("../shopify.server");
+    const { admin, session } = await authenticate.admin(request);
+    const { default: prisma } = await import("../db.server");
 
-  // Get persistent stats from DB
-  let stats = await prisma.storeStats.findUnique({
-    where: { shopDomain: session.shop }
-  });
+    // Get persistent stats from DB
+    let stats = await prisma.storeStats.findUnique({
+      where: { shopDomain: session.shop }
+    });
 
-  // If no stats yet, fetch initial counts
-  if (!stats) {
-    const response = await admin.graphql(
-      `#graphql
-      query getStoreStats {
-        productsCount { count }
-        collectionsCount { count }
-        priceRules(first: 1) { totalCount }
-        articles(first: 1) { totalCount }
-        pages(first: 1) { totalCount }
-        shop { shipsToCountries }
-      }`
-    );
-    const result = await response.json();
-    stats = {
-      products: result.data?.productsCount?.count || 0,
-      collections: result.data?.collectionsCount?.count || 0,
-      discounts: result.data?.priceRules?.totalCount || 0,
-      articles: result.data?.articles?.totalCount || 0,
-      pages: result.data?.pages?.totalCount || 0,
-      policies: 4,
-      shippingCountries: result.data?.shop?.shipsToCountries?.length || 0,
-      lastIndexed: null
-    };
-  }
-
-  return {
-    shop: session.shop,
-    stats,
-    initialSettings: {
-      greeting: "Hi! I'm Anna, your personal shopping assistant. How can I help you?",
-      color: "#4F46E5",
-      character: "anna",
-      position: "bottom-right",
-      language: "en"
+    // If no stats yet, fetch initial counts
+    if (!stats) {
+      const response = await admin.graphql(
+        `#graphql
+        query getStoreStats {
+          productsCount { count }
+          collectionsCount { count }
+          priceRules(first: 1) { totalCount }
+          articles(first: 1) { totalCount }
+          pages(first: 1) { totalCount }
+          shop { shipsToCountries }
+        }`
+      );
+      const result = await response.json();
+      stats = {
+        products: result.data?.productsCount?.count || 0,
+        collections: result.data?.collectionsCount?.count || 0,
+        discounts: result.data?.priceRules?.totalCount || 0,
+        articles: result.data?.articles?.totalCount || 0,
+        pages: result.data?.pages?.totalCount || 0,
+        policies: 4,
+        shippingCountries: result.data?.shop?.shipsToCountries?.length || 0,
+        lastIndexed: null
+      };
     }
-  };
+
+    return {
+      shop: session.shop,
+      stats,
+      initialSettings: {
+        greeting: "Hi! I'm Anna, your personal shopping assistant. How can I help you?",
+        color: "#4F46E5",
+        character: "anna",
+        position: "bottom-right",
+        language: "en"
+      }
+    };
+  } catch (error) {
+    console.error("[LOADER ERROR]:", error);
+    throw error;
+  }
 };
 
 export const action = async ({ request }) => {
