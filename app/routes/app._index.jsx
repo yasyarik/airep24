@@ -18,6 +18,7 @@ import {
   Tabs,
   Divider,
   FormLayout,
+  SegmentedControl,
   RangeSlider,
   Checkbox,
   Modal,
@@ -406,18 +407,21 @@ export default function Index() {
 
                             <BlockStack gap="300">
                               <Text variant="bodyMd" fontWeight="bold">Avatar & 3-Frame Animation</Text>
-                              <InlineStack gap="300">
-                                <Button pressed={pAvatarType === 'preset'} onClick={() => setPAvatarType('preset')}>Presets</Button>
-                                <Button pressed={pAvatarType === 'image'} onClick={() => setPAvatarType('image')}>Upload Frames</Button>
-                                <Button pressed={pAvatarType === 'svg'} onClick={() => setPAvatarType('svg')}>Custom SVG Code</Button>
-                              </InlineStack>
+                              <div style={{ marginBottom: '10px' }}>
+                                <SegmentedControl
+                                  selected={pAvatarType === 'preset' ? '' : pAvatarType}
+                                  options={[
+                                    { label: 'Upload Frames', value: 'image' },
+                                    { label: 'Custom SVG Code', value: 'svg' }
+                                  ]}
+                                  onChange={setPAvatarType}
+                                />
+                              </div>
 
                               {pAvatarType === 'preset' && (
-                                <InlineStack gap="200">
-                                  {discoveredPresets.map(p => (
-                                    <Button key={p.id} pressed={pAvatarId === p.id} onClick={() => { setPAvatarId(p.id); setPName(p.name); }}>{p.name}</Button>
-                                  ))}
-                                </InlineStack>
+                                <Box padding="300" background="bg-surface-secondary" borderRadius="8px">
+                                  <Text tone="subdued" as="p">You are editing a system preset. To customize the avatar, switch to "Upload Frames" or "Custom SVG Code" above.</Text>
+                                </Box>
                               )}
 
                               {pAvatarType === 'image' && (
