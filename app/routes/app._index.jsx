@@ -40,6 +40,9 @@ import { indexStoreData } from "../services/indexer.server";
 export const loader = async ({ request }) => {
   try {
     const { admin, session } = await authenticate.admin(request);
+    console.log("DEBUG: Admin object keys:", Object.keys(admin || {}));
+    if (admin && admin.rest) console.log("DEBUG: Admin REST is available");
+    else console.log("DEBUG: Admin REST IS MISSING");
 
     // 1. Discover Presets
     const presetsDir = path.join(process.cwd(), "extensions", "airep24-widget", "assets", "presets");
