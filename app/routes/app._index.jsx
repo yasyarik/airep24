@@ -40,7 +40,12 @@ import { indexStoreData } from "../services/indexer.server";
 export const loader = async ({ request }) => {
   try {
     const { admin, session } = await authenticate.admin(request);
-    console.log("WHO IS ADMIN?:", Object.keys(admin));
+    console.log("DEBUG: admin object type is", typeof admin);
+    console.log("DEBUG: admin keys:", Object.keys(admin || {}));
+    if (admin) {
+      console.log("DEBUG: has graphql?", typeof admin.graphql);
+      console.log("DEBUG: has rest?", typeof admin.rest);
+    }
     if (admin && admin.rest) {
       console.log("Admin REST resources:", Object.keys(admin.rest.resources || {}));
     } else {
