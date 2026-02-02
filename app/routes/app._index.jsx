@@ -30,18 +30,20 @@ import {
   DeleteIcon,
   ViewIcon,
 } from "@shopify/polaris-icons";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+import fs from "fs/promises";
+import path from "path";
+import { indexStoreData } from "../services/indexer.server";
 
 // Loader: Discover presets and load profiles with assets
 export const loader = async ({ request }) => {
   try {
-    const { authenticate } = await import("../shopify.server");
     const { admin, session } = await authenticate.admin(request);
     console.log("Admin object keys:", Object.keys(admin));
+    // If admin.rest is undefined, it might be nested or named differently in this version
     if (admin.rest) console.log("Admin REST resources:", Object.keys(admin.rest.resources || {}));
     else console.warn("ADMIN.REST IS UNDEFINED!");
-    const { default: prisma } = await import("../db.server");
-    const fs = await import("fs/promises");
-    const path = await import("path");
 
     // 1. Discover Presets
     const presetsDir = path.join(process.cwd(), "extensions", "airep24-widget", "assets", "presets");
@@ -184,10 +186,7 @@ export const loader = async ({ request }) => {
 
 export const action = async ({ request }) => {
   try {
-    const { authenticate } = await import("../shopify.server");
-    const { session } = await authenticate.admin(request);
-    const { default: prisma } = await import("../db.server");
-    const { indexStoreData } = await import("../services/indexer.server");
+    const { admin, session } = await authenticate.admin(request);
 
     const formData = await request.formData();
     const intent = formData.get("intent");
