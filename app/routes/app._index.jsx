@@ -38,6 +38,7 @@ import { indexStoreData } from "../services/indexer.server";
 
 // Loader: Discover presets and load profiles with assets
 export const loader = async ({ request }) => {
+  console.log("DEBUG: START LOADER", request.url);
   try {
     const { admin, session } = await authenticate.admin(request);
     console.log("DEBUG: admin object type is", typeof admin);
