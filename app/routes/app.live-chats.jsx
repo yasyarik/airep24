@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Page, Layout, Card, ResourceList, ResourceItem, Text, Badge, BlockStack, InlineStack, TextField, Button, Box } from "@shopify/polaris";
+import { Page, Layout, Card, ResourceList, ResourceItem, Text, Badge, BlockStack, InlineStack, TextField, Button, Box, Icon, Divider } from "@shopify/polaris";
 import { ChatIcon, PersonIcon } from "@shopify/polaris-icons";
 
 export default function LiveChats() {

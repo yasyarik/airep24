@@ -17,6 +17,7 @@ import {
   Banner,
   Tabs,
   Divider,
+  FormLayout,
 } from "@shopify/polaris";
 import {
   ChatIcon,
@@ -26,6 +27,7 @@ import {
   EditIcon,
   SaveIcon,
   ViewIcon,
+  DeleteIcon,
 } from "@shopify/polaris-icons";
 
 export const loader = async ({ request }) => {
