@@ -13,11 +13,13 @@ export const loader = async ({ request }) => {
         where: { shopDomain: shop }
     });
 
-    const characterConfig = await prisma.characterConfig.findUnique({
-        where: { shopDomain: shop }
+    // Fetch the ACTIVE character profile
+    const activeProfile = await prisma.characterProfile.findFirst({
+        where: { shopDomain: shop, isActive: true }
     });
 
-    if (!widgetConfig || !characterConfig) {
+    if (!widgetConfig || !activeProfile) {
+        // Fallback or disabled state
         return { enabled: false };
     }
 
@@ -34,13 +36,13 @@ export const loader = async ({ request }) => {
             minimizedStyle: widgetConfig.minimizedStyle,
         },
         character: {
-            name: characterConfig.name,
-            role: characterConfig.role,
-            avatarType: characterConfig.avatarType,
-            avatarId: characterConfig.avatarId,
-            avatarUrl: characterConfig.avatarUrl,
-            avatarSvg: characterConfig.avatarSvg,
-            welcomeMessage: characterConfig.welcomeMessage
+            name: activeProfile.name,
+            role: activeProfile.role,
+            avatarType: activeProfile.avatarType,
+            avatarId: activeProfile.avatarId,
+            avatarUrl: activeProfile.avatarUrl,
+            avatarSvg: activeProfile.avatarSvg,
+            welcomeMessage: activeProfile.welcomeMessage
         }
     };
 };

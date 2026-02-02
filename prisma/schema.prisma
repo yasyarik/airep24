@@ -146,18 +146,22 @@ model WidgetConfig {
   updatedAt       DateTime @updatedAt
 }
 
-model CharacterConfig {
+model CharacterProfile {
   id           String   @id @default(uuid())
-  shopDomain   String   @unique
+  shopDomain   String
+  isActive     Boolean  @default(false)
   name         String   @default("Anna")
-  avatarType   String   @default("preset") // preset, custom
+  avatarType   String   @default("preset") // preset, image, svg
   avatarId     String   @default("anna") // for presets
-  avatarUrl    String?  // for custom images
-  avatarSvg    String?  // for custom SVG
+  avatarUrl    String?  // for uploaded images
+  avatarSvg    String?  // for SVG code
   role         String   @default("Shopping Assistant")
   welcomeMessage String @default("Hi! I'm Anna, your local AI shopping assistant. How can I help you?")
   instructions String   @default("You are a helpful and friendly shopping assistant for our Shopify store.")
+  createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+
+  @@index([shopDomain])
 }
 
 model ChatSession {

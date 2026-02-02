@@ -21,6 +21,7 @@ import {
   RangeSlider,
   Checkbox,
   Modal,
+  DropZone,
 } from "@shopify/polaris";
 import {
   ChatIcon,
@@ -30,8 +31,8 @@ import {
   SaveIcon,
   DeleteIcon,
   ViewIcon,
-  SettingsIcon,
   CheckIcon,
+  NoteIcon,
 } from "@shopify/polaris-icons";
 
 export const loader = async ({ request }) => {
@@ -40,65 +41,26 @@ export const loader = async ({ request }) => {
     const { admin, session } = await authenticate.admin(request);
     const { default: prisma } = await import("../db.server");
 
-    // Get persistent stats from DB
-    let dbStats = await prisma.storeStats.findUnique({
-      where: { shopDomain: session.shop }
-    });
+    // Stats
+    let dbStats = await prisma.storeStats.findUnique({ where: { shopDomain: session.shop } });
+    const stats = dbStats ? { ...dbStats, lastIndexed: dbStats.lastIndexed?.toISOString() } : { products: 0, collections: 0, discounts: 0, articles: 0, pages: 0, policies: 4, autoSync: true, lastIndexed: null };
 
-    let stats;
-    if (dbStats) {
-      stats = {
-        products: dbStats.products,
-        collections: dbStats.collections,
-        discounts: dbStats.discounts,
-        articles: dbStats.articles,
-        pages: dbStats.pages,
-        policies: dbStats.policies,
-        autoSync: dbStats.autoSync,
-        shippingCountries: 0,
-        lastIndexed: dbStats.lastIndexed ? dbStats.lastIndexed.toISOString() : null
-      };
-    } else {
-      stats = {
-        products: 0,
-        collections: 0,
-        discounts: 0,
-        articles: 0,
-        pages: 0,
-        policies: 4,
-        autoSync: true,
-        shippingCountries: 0,
-        lastIndexed: null
-      };
-    }
-
-    // Get configs
+    // Configs
     let widgetConfig = await prisma.widgetConfig.findUnique({ where: { shopDomain: session.shop } });
-    if (!widgetConfig) {
-      widgetConfig = await prisma.widgetConfig.create({
-        data: { shopDomain: session.shop }
+    if (!widgetConfig) widgetConfig = await prisma.widgetConfig.create({ data: { shopDomain: session.shop } });
+
+    // Profiles
+    let profiles = await prisma.characterProfile.findMany({ where: { shopDomain: session.shop }, orderBy: { createdAt: 'asc' } });
+    if (profiles.length === 0) {
+      const defaultProfile = await prisma.characterProfile.create({
+        data: { shopDomain: session.shop, name: "Anna", isActive: true }
       });
+      profiles = [defaultProfile];
     }
 
-    let characterConfig = await prisma.characterConfig.findUnique({ where: { shopDomain: session.shop } });
-    if (!characterConfig) {
-      characterConfig = await prisma.characterConfig.create({
-        data: { shopDomain: session.shop }
-      });
-    }
+    const activeChatCount = await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } });
 
-    // Get active chat count
-    const activeChatCount = await prisma.chatSession.count({
-      where: { shopDomain: session.shop, status: 'ACTIVE' }
-    });
-
-    return {
-      shop: session.shop,
-      stats,
-      widgetConfig,
-      characterConfig,
-      activeChatCount
-    };
+    return { shop: session.shop, stats, widgetConfig, profiles, activeChatCount };
   } catch (error) {
     console.error("[LOADER ERROR]:", error);
     throw error;
@@ -117,42 +79,54 @@ export const action = async ({ request }) => {
 
     if (intent === "index") {
       const result = await indexStoreData(admin, session.shop, prisma);
-      return { success: result.success, message: result.success ? "Successfully indexed store data!" : "Indexing failed." };
+      return { success: result.success };
     }
 
     if (intent === "saveWidget") {
       const data = JSON.parse(formData.get("data"));
-      await prisma.widgetConfig.update({
-        where: { shopDomain: session.shop },
-        data
+      await prisma.widgetConfig.update({ where: { shopDomain: session.shop }, data });
+      return { success: true };
+    }
+
+    if (intent === "createProfile") {
+      await prisma.characterProfile.create({
+        data: { shopDomain: session.shop, name: "New Character", role: "Assistant" }
       });
       return { success: true };
     }
 
-    if (intent === "saveCharacter") {
+    if (intent === "deleteProfile") {
+      const id = formData.get("id");
+      const count = await prisma.characterProfile.count({ where: { shopDomain: session.shop } });
+      if (count > 1) {
+        await prisma.characterProfile.delete({ where: { id } });
+        // If we deleted active, set another one active
+        const hasActive = await prisma.characterProfile.findFirst({ where: { shopDomain: session.shop, isActive: true } });
+        if (!hasActive) {
+          const first = await prisma.characterProfile.findFirst({ where: { shopDomain: session.shop } });
+          if (first) await prisma.characterProfile.update({ where: { id: first.id }, data: { isActive: true } });
+        }
+      }
+      return { success: true };
+    }
+
+    if (intent === "setActive") {
+      const id = formData.get("id");
+      await prisma.characterProfile.updateMany({ where: { shopDomain: session.shop }, data: { isActive: false } });
+      await prisma.characterProfile.update({ where: { id }, data: { isActive: true } });
+      return { success: true };
+    }
+
+    if (intent === "saveProfile") {
+      const id = formData.get("id");
       const data = JSON.parse(formData.get("data"));
-      await prisma.characterConfig.update({
-        where: { shopDomain: session.shop },
-        data
-      });
+      await prisma.characterProfile.update({ where: { id }, data });
       return { success: true };
     }
 
     if (intent === "toggleEnabled") {
       const current = formData.get("current") === "true";
-      await prisma.widgetConfig.update({
-        where: { shopDomain: session.shop },
-        data: { enabled: !current }
-      });
-      return { success: true };
-    }
-
-    if (intent === "toggleAutoSync") {
-      const current = formData.get("current") === "true";
-      await prisma.storeStats.update({
-        where: { shopDomain: session.shop },
-        data: { autoSync: !current }
-      });
+      await prisma.widgetConfig.update({ where: { shopDomain: session.shop }, data: { enabled: !current } });
       return { success: true };
     }
 
@@ -164,20 +138,35 @@ export const action = async ({ request }) => {
 };
 
 export default function Index() {
-  const { stats, widgetConfig, characterConfig, activeChatCount } = useLoaderData();
+  const { stats, widgetConfig, profiles, activeChatCount } = useLoaderData();
   const fetcher = useFetcher();
-  const isIndexing = fetcher.state !== "idle";
-  const isSaving = fetcher.state !== "idle" && fetcher.formData?.get("intent")?.startsWith("save");
+  const uploadFetcher = useFetcher();
 
-  // Character States
-  const [charName, setCharName] = useState(characterConfig.name);
-  const [avatarType, setAvatarType] = useState(characterConfig.avatarType || "preset");
-  const [avatarId, setAvatarId] = useState(characterConfig.avatarId || "anna");
-  const [avatarUrl, setAvatarUrl] = useState(characterConfig.avatarUrl || "");
-  const [avatarSvg, setAvatarSvg] = useState(characterConfig.avatarSvg || "");
-  const [charRole, setCharRole] = useState(characterConfig.role);
-  const [charWelcome, setCharWelcome] = useState(characterConfig.welcomeMessage);
-  const [charInstructions, setCharInstructions] = useState(characterConfig.instructions);
+  const [selectedProfileId, setSelectedProfileId] = useState(profiles.find(p => p.isActive)?.id || profiles[0].id);
+  const currentProfile = profiles.find(p => p.id === selectedProfileId);
+
+  // Profile States (Synced when selectedProfileId changes)
+  const [pName, setPName] = useState("");
+  const [pRole, setPRole] = useState("");
+  const [pWelcome, setPWelcome] = useState("");
+  const [pInstructions, setPInstructions] = useState("");
+  const [pAvatarType, setPAvatarType] = useState("preset");
+  const [pAvatarId, setPAvatarId] = useState("anna");
+  const [pAvatarUrl, setPAvatarUrl] = useState("");
+  const [pAvatarSvg, setPAvatarSvg] = useState("");
+
+  useEffect(() => {
+    if (currentProfile) {
+      setPName(currentProfile.name);
+      setPRole(currentProfile.role);
+      setPWelcome(currentProfile.welcomeMessage);
+      setPInstructions(currentProfile.instructions);
+      setPAvatarType(currentProfile.avatarType);
+      setPAvatarId(currentProfile.avatarId);
+      setPAvatarUrl(currentProfile.avatarUrl);
+      setPAvatarSvg(currentProfile.avatarSvg);
+    }
+  }, [selectedProfileId, profiles]);
 
   // Widget States
   const [primaryColor, setPrimaryColor] = useState(widgetConfig.primaryColor);
@@ -190,289 +179,208 @@ export default function Index() {
   const [minimizedStyle, setMinimizedStyle] = useState(widgetConfig.minimizedStyle);
 
   const [selectedTab, setSelectedTab] = useState(0);
-  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
-
   const handleTabChange = useCallback((selectedTabIndex) => setSelectedTab(selectedTabIndex), []);
 
-  const handleSaveWidget = () => {
+  const handleSaveProfile = () => {
     fetcher.submit(
       {
-        intent: "saveWidget",
-        data: JSON.stringify({
-          primaryColor,
-          backgroundColor: bgColor,
-          textColor,
-          borderRadius,
-          shadow,
-          opacity,
-          position,
-          minimizedStyle
-        })
+        intent: "saveProfile",
+        id: selectedProfileId,
+        data: JSON.stringify({ name: pName, role: pRole, welcomeMessage: pWelcome, instructions: pInstructions, avatarType: pAvatarType, avatarId: pAvatarId, avatarUrl: pAvatarUrl, avatarSvg: pAvatarSvg })
       },
       { method: "post" }
     );
   };
 
-  const handleSaveCharacter = () => {
-    fetcher.submit(
-      {
-        intent: "saveCharacter",
-        data: JSON.stringify({
-          name: charName,
-          avatarType,
-          avatarId,
-          avatarUrl,
-          avatarSvg,
-          role: charRole,
-          welcomeMessage: charWelcome,
-          instructions: charInstructions
-        })
-      },
-      { method: "post" }
-    );
-  };
+  const handleFileUpload = useCallback(async (_droppedFiles, acceptedFiles) => {
+    if (acceptedFiles.length > 0) {
+      const file = acceptedFiles[0];
+      const formData = new FormData();
+      formData.append("file", file);
 
-  const characterPresets = [
-    { id: 'anna', name: 'Anna', color: '#4F46E5', desc: 'Friendly Support' },
-    { id: 'ava', name: 'Ava', color: '#10B981', desc: 'Energy & Tech' },
-    { id: 'sofia', name: 'Sofia', color: '#EC4899', desc: 'Luxury & Style' }
-  ];
+      uploadFetcher.submit(formData, {
+        method: "post",
+        action: "/api/upload",
+        encType: "multipart/form-data"
+      });
+    }
+  }, []);
 
-  const tabs = [
-    { id: 'character', content: 'Character & Avatar', accessibilityLabel: 'Character Settings', panelID: 'character-panel' },
-    { id: 'widget', content: 'Widget Styling', accessibilityLabel: 'Widget Styling', panelID: 'widget-panel' },
-    { id: 'faq', content: 'FAQ Editor', accessibilityLabel: 'FAQ Editor', panelID: 'faq-panel' },
-  ];
+  useEffect(() => {
+    if (uploadFetcher.data && uploadFetcher.data.url) {
+      setPAvatarUrl(uploadFetcher.data.url);
+      setPAvatarType('image');
+    }
+  }, [uploadFetcher.data]);
 
   return (
     <Page
-      title="AiRep24 Dashboard"
+      title="Dashboard"
       secondaryActions={[
         {
-          content: widgetConfig.enabled ? "Disable Widget" : "Enable Widget",
-          outline: widgetConfig.enabled,
+          content: widgetConfig.enabled ? "Disable All" : "Enable AI Widget",
           tone: widgetConfig.enabled ? "critical" : "success",
-          onAction: () => fetcher.submit({ intent: "toggleEnabled", current: String(widgetConfig.enabled) }, { method: "post" }),
-          loading: fetcher.state !== "idle" && fetcher.formData?.get("intent") === "toggleEnabled"
+          onAction: () => fetcher.submit({ intent: "toggleEnabled", current: String(widgetConfig.enabled) }, { method: "post" })
         }
       ]}
     >
       <BlockStack gap="500">
-        <Banner tone={widgetConfig.enabled ? "success" : "warning"} hideLinks>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-            <Text as="p" variant="bodyMd">
-              AI Assistant is {widgetConfig.enabled ? <strong>Active</strong> : <strong>Disabled</strong>} in your theme.
-            </Text>
-            {widgetConfig.enabled && <Badge tone="success">{activeChatCount} Live Chats</Badge>}
-          </div>
+        <Banner tone={widgetConfig.enabled ? "success" : "warning"}>
+          <InlineStack align="space-between">
+            <Text as="p">Widget is {widgetConfig.enabled ? "Active" : "Hidden"}. Showing on storefront.</Text>
+            <Badge tone="success">{activeChatCount} Live Chats</Badge>
+          </InlineStack>
         </Banner>
 
         <Layout>
           <Layout.Section>
             <Card padding="0">
-              <Tabs tabs={tabs} selected={selectedTab} onSelect={handleTabChange}>
+              <Tabs tabs={[
+                { id: 'character', content: 'Character Library' },
+                { id: 'widget', content: 'Widget Styling' },
+                { id: 'data', content: 'Knowledge Base' }
+              ]} selected={selectedTab} onSelect={handleTabChange}>
                 <Box padding="500">
                   {selectedTab === 0 && (
                     <BlockStack gap="500">
                       <InlineStack align="space-between">
-                        <Text variant="headingMd" as="h3">Character & Avatar Selection</Text>
-                        <Button variant="primary" onClick={handleSaveCharacter} loading={isSaving && fetcher.formData?.get("intent") === "saveCharacter"}>Save Changes</Button>
+                        <Text variant="headingMd" as="h3">Your AI Personas</Text>
+                        <Button icon={PlusIcon} onClick={() => fetcher.submit({ intent: "createProfile" }, { method: "post" })}>New Persona</Button>
                       </InlineStack>
 
-                      <BlockStack gap="200">
-                        <Text variant="bodyMd" fontWeight="bold" as="p">Choose Avatar Type</Text>
-                        <InlineStack gap="300">
-                          <Button pressed={avatarType === 'preset'} onClick={() => setAvatarType('preset')}>Presets</Button>
-                          <Button pressed={avatarType === 'custom'} onClick={() => setAvatarType('custom')}>Custom (URL/Logo)</Button>
-                          <Button pressed={avatarType === 'svg'} onClick={() => setAvatarType('svg')}>Custom (SVG Code)</Button>
-                        </InlineStack>
-                      </BlockStack>
-
-                      {avatarType === 'preset' && (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
-                          {characterPresets.map((p) => (
-                            <div
-                              key={p.id}
-                              onClick={() => setAvatarId(p.id)}
-                              style={{
-                                cursor: 'pointer',
-                                border: avatarId === p.id ? `2px solid ${p.color}` : '1px solid #e1e3e5',
-                                borderRadius: '12px',
-                                padding: '16px',
-                                textAlign: 'center',
-                                backgroundColor: avatarId === p.id ? `${p.color}08` : 'white',
-                                transition: 'all 0.2s'
-                              }}
-                            >
-                              <div style={{
-                                width: '60px',
-                                height: '60px',
-                                margin: '0 auto 12px',
-                                borderRadius: '50%',
-                                backgroundColor: p.color,
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                color: 'white'
-                              }}>
-                                <Icon source={PersonIcon} />
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                        {profiles.map(p => (
+                          <div
+                            key={p.id}
+                            onClick={() => setSelectedProfileId(p.id)}
+                            style={{
+                              padding: '16px',
+                              border: selectedProfileId === p.id ? '2px solid #4f46e5' : '1fr solid #e1e3e5',
+                              borderRadius: '12px',
+                              cursor: 'pointer',
+                              backgroundColor: selectedProfileId === p.id ? '#f5f5ff' : 'white',
+                              position: 'relative'
+                            }}
+                          >
+                            <BlockStack align="center" gap="100">
+                              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#eee', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                                {p.avatarType === 'image' && p.avatarUrl ? <img src={p.avatarUrl} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : <Icon source={PersonIcon} />}
                               </div>
-                              <Text variant="bodyMd" fontWeight="bold" as="p">{p.name}</Text>
-                              <Text variant="bodyXs" tone="subdued" as="p">{p.desc}</Text>
+                              <Text variant="bodyMd" fontWeight="bold" alignment="center">{p.name}</Text>
+                              {p.isActive && <Badge tone="success">Active</Badge>}
+                              <div style={{ marginTop: '8px' }}>
+                                {!p.isActive && <Button size="slim" onClick={(e) => { e.stopPropagation(); fetcher.submit({ intent: "setActive", id: p.id }, { method: "post" }); }}>Set Active</Button>}
+                              </div>
+                            </BlockStack>
+                          </div>
+                        ))}
+                      </div>
+
+                      <Divider />
+
+                      {currentProfile && (
+                        <BlockStack gap="400">
+                          <InlineStack align="space-between">
+                            <Text variant="headingMd" as="h3">Editing: {pName}</Text>
+                            <InlineStack gap="200">
+                              <Button tone="critical" onClick={() => fetcher.submit({ intent: "deleteProfile", id: selectedProfileId }, { method: "post" })} disabled={profiles.length <= 1}>Delete</Button>
+                              <Button variant="primary" onClick={handleSaveProfile} loading={fetcher.state !== "idle"}>Save Persona</Button>
+                            </InlineStack>
+                          </InlineStack>
+
+                          <FormLayout>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                              <TextField label="Character Name" value={pName} onChange={setPName} autoComplete="off" />
+                              <TextField label="Role Title" value={pRole} onChange={setPRole} autoComplete="off" />
                             </div>
-                          ))}
-                        </div>
-                      )}
 
-                      {avatarType === 'custom' && (
-                        <TextField
-                          label="Avatar Image URL"
-                          value={avatarUrl}
-                          onChange={setAvatarUrl}
-                          placeholder="https://example.com/logo.png"
-                          autoComplete="off"
-                          helpText="Use a direct link to an image (PNG/JPG)."
-                        />
-                      )}
+                            <BlockStack gap="200">
+                              <Text variant="bodyMd" fontWeight="bold" as="p">Avatar Selection</Text>
+                              <InlineStack gap="300">
+                                <Button pressed={pAvatarType === 'preset'} onClick={() => setPAvatarType('preset')}>Presets</Button>
+                                <Button pressed={pAvatarType === 'image'} onClick={() => setPAvatarType('image')}>Upload Image</Button>
+                                <Button pressed={pAvatarType === 'svg'} onClick={() => setPAvatarType('svg')}>Custom SVG</Button>
+                              </InlineStack>
 
-                      {avatarType === 'svg' && (
-                        <TextField
-                          label="Custom SVG Code"
-                          value={avatarSvg}
-                          onChange={setAvatarSvg}
-                          multiline={4}
-                          placeholder="<svg>...</svg>"
-                          autoComplete="off"
-                          helpText="Paste raw SVG code here. It will be rendered as the assistant avatar."
-                        />
-                      )}
+                              {pAvatarType === 'preset' && (
+                                <InlineStack gap="200">
+                                  {['anna', 'ava', 'sofia'].map(id => (
+                                    <Button key={id} pressed={pAvatarId === id} onClick={() => setPAvatarId(id)}>{id.charAt(0).toUpperCase() + id.slice(1)}</Button>
+                                  ))}
+                                </InlineStack>
+                              )}
 
-                      <FormLayout>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                          <TextField label="Assistant Name" value={charName} onChange={setCharName} autoComplete="off" />
-                          <TextField label="Role Title" value={charRole} onChange={setCharRole} placeholder="e.g. Shopping Assistant" autoComplete="off" />
-                        </div>
-                        <TextField label="Welcome Message" value={charWelcome} onChange={setCharWelcome} multiline={2} autoComplete="off" />
-                        <TextField
-                          label="Detailed Instructions for AI"
-                          value={charInstructions}
-                          onChange={setCharInstructions}
-                          multiline={6}
-                          helpText="Explain how the AI should behave."
-                          autoComplete="off"
-                        />
-                      </FormLayout>
+                              {pAvatarType === 'image' && (
+                                <BlockStack gap="200">
+                                  <div style={{ maxWidth: '300px' }}>
+                                    <DropZone onDrop={handleFileUpload} label="Upload Avatar" allowMultiple={false}>
+                                      {pAvatarUrl ? <Thumbnail source={pAvatarUrl} alt="Avatar" /> : <DropZone.FileUpload />}
+                                    </DropZone>
+                                  </div>
+                                  <TextField label="Or Image URL" value={pAvatarUrl} onChange={setPAvatarUrl} autoComplete="off" />
+                                </BlockStack>
+                              )}
+
+                              {pAvatarType === 'svg' && (
+                                <TextField label="SVG Code" value={pAvatarSvg} onChange={setPAvatarSvg} multiline={4} autoComplete="off" />
+                              )}
+                            </BlockStack>
+
+                            <TextField label="Welcome Message" value={pWelcome} onChange={setPWelcome} multiline={2} autoComplete="off" />
+                            <TextField label="AI Instructions" value={pInstructions} onChange={setPInstructions} multiline={5} autoComplete="off" />
+                          </FormLayout>
+                        </BlockStack>
+                      )}
                     </BlockStack>
                   )}
 
                   {selectedTab === 1 && (
                     <BlockStack gap="400">
                       <InlineStack align="space-between">
-                        <Text variant="headingMd" as="h3">Widget Customization</Text>
-                        <Button variant="primary" onClick={handleSaveWidget} loading={isSaving && fetcher.formData?.get("intent") === "saveWidget"}>Save Changes</Button>
+                        <Text variant="headingMd" as="h3">Widget Design</Text>
+                        <Button variant="primary" onClick={() => fetcher.submit({ intent: "saveWidget", data: JSON.stringify({ primaryColor, backgroundColor: bgColor, textColor, borderRadius, shadow, opacity, position, minimizedStyle }) }, { method: "post" })}>Save Styling</Button>
                       </InlineStack>
-
                       <FormLayout>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                           <BlockStack gap="200">
-                            <Text variant="bodyMd" as="p">Colors</Text>
-                            <InlineStack gap="300">
-                              <BlockStack gap="100">
-                                <Text variant="bodyXs" tone="subdued">Primary</Text>
-                                <input type="color" value={primaryColor} onChange={(e) => setPrimaryColor(e.target.value)} style={{ width: '50px', height: '30px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                              </BlockStack>
-                              <BlockStack gap="100">
-                                <Text variant="bodyXs" tone="subdued">Background</Text>
-                                <input type="color" value={bgColor} onChange={(e) => setBgColor(e.target.value)} style={{ width: '50px', height: '30px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                              </BlockStack>
-                              <BlockStack gap="100">
-                                <Text variant="bodyXs" tone="subdued">Text</Text>
-                                <input type="color" value={textColor} onChange={(e) => setTextColor(e.target.value)} style={{ width: '50px', height: '30px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                              </BlockStack>
+                            <Text variant="bodyMd" as="p">Brand Colors</Text>
+                            <InlineStack gap="200">
+                              <input type="color" value={primaryColor} onChange={e => setPrimaryColor(e.target.value)} />
+                              <input type="color" value={bgColor} onChange={e => setBgColor(e.target.value)} />
+                              <input type="color" value={textColor} onChange={e => setTextColor(e.target.value)} />
                             </InlineStack>
                           </BlockStack>
-
-                          <BlockStack gap="200">
-                            <Select
-                              label="Minimized Style"
-                              options={[
-                                { label: 'Icon Only', value: 'icon' },
-                                { label: 'Bubble with Text', value: 'bubble' },
-                                { label: 'Floating Name', value: 'text' },
-                              ]}
-                              value={minimizedStyle}
-                              onChange={setMinimizedStyle}
-                            />
-                          </BlockStack>
+                          <Select label="Entry Style" value={minimizedStyle} onChange={setMinimizedStyle} options={[{ label: 'Icon Only', value: 'icon' }, { label: 'Bubble', value: 'bubble' }, { label: 'Text', value: 'text' }]} />
                         </div>
-
                         <Divider />
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
-                          <RangeSlider
-                            label="Border Radius"
-                            value={borderRadius}
-                            onChange={setBorderRadius}
-                            min={0}
-                            max={30}
-                            output
-                          />
-                          <RangeSlider
-                            label="Opacity (%)"
-                            value={opacity}
-                            onChange={setOpacity}
-                            min={10}
-                            max={100}
-                            output
-                          />
-                        </div>
-
-                        <InlineStack gap="500">
-                          <Checkbox
-                            label="Enable Shadow"
-                            checked={shadow}
-                            onChange={setShadow}
-                          />
-                          <Select
-                            label="Position"
-                            options={[
-                              { label: 'Bottom Right', value: 'bottom-right' },
-                              { label: 'Bottom Left', value: 'bottom-left' },
-                            ]}
-                            value={position}
-                            onChange={setPosition}
-                          />
-                        </InlineStack>
+                        <RangeSlider label="Corners" value={borderRadius} onChange={setBorderRadius} min={0} max={40} output />
+                        <Checkbox label="Drop Shadow" checked={shadow} onChange={setShadow} />
+                        <Select label="Screen Position" value={position} onChange={setPosition} options={[{ label: 'Bottom Right', value: 'bottom-right' }, { label: 'Bottom Left', value: 'bottom-left' }]} />
                       </FormLayout>
                     </BlockStack>
                   )}
 
                   {selectedTab === 2 && (
                     <BlockStack gap="400">
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text variant="headingMd" as="h3">Quick Response Buttons (FAQ)</Text>
-                        <Button icon={PlusIcon}>Add Question</Button>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {[
-                          { label: "Shipping Info", q: "What are your shipping rates?" },
-                          { label: "Return Policy", q: "How do I return my order?" }
-                        ].map((faq, i) => (
-                          <Card key={i} subdued>
-                            <Box padding="300">
-                              <InlineStack align="space-between">
-                                <BlockStack gap="100">
-                                  <Text variant="bodyMd" fontWeight="bold" as="p">{faq.label}</Text>
-                                  <Text variant="bodySm" tone="subdued" as="p">{faq.q}</Text>
-                                </BlockStack>
-                                <InlineStack gap="200">
-                                  <Button icon={EditIcon} variant="tertiary" />
-                                  <Button icon={DeleteIcon} tone="critical" variant="tertiary" />
-                                </InlineStack>
-                              </InlineStack>
-                            </Box>
-                          </Card>
-                        ))}
+                      <InlineStack align="space-between">
+                        <Text variant="headingMd" as="h3">Knowledge Sync</Text>
+                        <Button variant="primary" icon={PlusIcon} onClick={() => fetcher.submit({ intent: "index" }, { method: "post" })} loading={fetcher.state !== "idle"}>Re-sync Store</Button>
+                      </InlineStack>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                        <Card padding="400">
+                          <BlockStack gap="200">
+                            <Text variant="bodyMd" tone="subdued">Indexing Sources</Text>
+                            <Text as="p">✅ {stats.products} Products</Text>
+                            <Text as="p">✅ {stats.collections} Collections</Text>
+                            <Text as="p">✅ {stats.pages} Pages</Text>
+                          </BlockStack>
+                        </Card>
+                        <Card padding="400">
+                          <BlockStack gap="200">
+                            <Text variant="bodyMd" tone="subdued">Last Activity</Text>
+                            <Text as="p">{stats.lastIndexed ? new Date(stats.lastIndexed).toLocaleString() : "Never indexed"}</Text>
+                          </BlockStack>
+                        </Card>
                       </div>
                     </BlockStack>
                   )}
@@ -485,221 +393,49 @@ export default function Index() {
             <BlockStack gap="500">
               <Card>
                 <BlockStack gap="400">
-                  <Text variant="headingMd" as="h3">Live Preview</Text>
-                  <div
-                    style={{
-                      border: '1px solid #e1e3e5',
-                      borderRadius: `${borderRadius}px`,
-                      overflow: 'hidden',
-                      backgroundColor: bgColor,
-                      boxShadow: shadow ? '0 10px 25px rgba(0,0,0,0.1)' : 'none',
-                      opacity: opacity / 100,
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
-                    }}
-                  >
+                  <Text variant="headingMd" as="h3">Widget Preview</Text>
+                  <div style={{
+                    border: '1px solid #e1e3e5',
+                    borderRadius: borderRadius + 'px',
+                    overflow: 'hidden',
+                    backgroundColor: bgColor,
+                    boxShadow: shadow ? '0 10px 30px rgba(0,0,0,0.1)' : 'none',
+                    transition: 'all 0.3s'
+                  }}>
                     <div style={{ height: '350px', display: 'flex', flexDirection: 'column' }}>
-                      <div style={{ backgroundColor: primaryColor, padding: '16px', color: 'white', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {avatarType === 'svg' && avatarSvg ? (
-                            <div dangerouslySetInnerHTML={{ __html: avatarSvg }} style={{ width: '24px', height: '24px' }} />
-                          ) : avatarType === 'custom' && avatarUrl ? (
-                            <img src={avatarUrl} style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} />
-                          ) : (
-                            <Icon source={PersonIcon} />
-                          )}
+                      <div style={{ background: primaryColor, color: 'white', padding: '16px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {pAvatarType === 'image' && pAvatarUrl ? <img src={pAvatarUrl} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} /> : pAvatarType === 'svg' && pAvatarSvg ? <div dangerouslySetInnerHTML={{ __html: pAvatarSvg }} style={{ width: '20px', height: '20px' }} /> : <Icon source={PersonIcon} />}
                         </div>
                         <BlockStack gap="0">
-                          <Text variant="bodyMd" fontWeight="bold" as="p" tone="inherit">{charName}</Text>
-                          <Text variant="bodyXs" as="p" tone="inherit" style={{ opacity: 0.8 }}>{charRole}</Text>
+                          <Text variant="bodyMd" fontWeight="bold" as="p" tone="inherit">{pName}</Text>
+                          <Text variant="bodyXs" as="p" tone="inherit" style={{ opacity: 0.8 }}>{pRole}</Text>
                         </BlockStack>
                       </div>
-                      <div style={{ flex: 1, padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', background: '#f9fafb' }}>
-                        <div style={{ alignSelf: 'flex-start', backgroundColor: 'white', padding: '10px 14px', borderRadius: '14px', border: '1px solid #e1e3e5', maxWidth: '85%', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                          <Text variant="bodySm" as="p" style={{ color: textColor }}>{charWelcome}</Text>
-                        </div>
-                        <div style={{ alignSelf: 'flex-end', backgroundColor: primaryColor, padding: '10px 14px', borderRadius: '14px', maxWidth: '85%', color: 'white' }}>
-                          <Text variant="bodySm" as="p">How much is shipping?</Text>
+                      <div style={{ flex: 1, padding: '16px', background: '#f9fafb' }}>
+                        <div style={{ background: 'white', borderRadius: '12px', padding: '10px', maxWidth: '80%', border: '1px solid #eee' }}>
+                          <Text variant="bodySm" as="p">{pWelcome}</Text>
                         </div>
                       </div>
-                      <div style={{ backgroundColor: 'white', padding: '12px', borderTop: '1px solid #e1e3e5' }}>
-                        <div style={{ height: '36px', border: '1px solid #e1e3e5', borderRadius: '18px', display: 'flex', alignItems: 'center', padding: '0 16px', background: '#f9fafb' }}>
-                          <Text variant="bodySm" tone="subdued" as="p">Type a message...</Text>
+                      <div style={{ padding: '12px', borderTop: '1px solid #eee' }}>
+                        <div style={{ height: '32px', borderRadius: '16px', background: '#f4f4f4', display: 'flex', alignItems: 'center', padding: '0 12px' }}>
+                          <Text variant="bodySm" tone="subdued" as="p">Type here...</Text>
                         </div>
                       </div>
                     </div>
                   </div>
-
-                  <InlineStack gap="200" wrap={false}>
-                    <Button fullWidth icon={ViewIcon} onClick={() => setIsPreviewModalOpen(true)}>Full Preview</Button>
-                    <div style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '50%',
-                      backgroundColor: primaryColor,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.1)',
-                      color: 'white',
-                      cursor: 'pointer'
-                    }}>
+                  <InlineStack align="center" gap="200">
+                    <Button icon={ViewIcon} fullWidth>Open in Modal</Button>
+                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: primaryColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' }}>
                       <Icon source={ChatIcon} />
                     </div>
                   </InlineStack>
-                </BlockStack>
-              </Card>
-
-              <Card>
-                <BlockStack gap="300">
-                  <Text variant="headingMd" as="h3">Knowledge Base Status</Text>
-
-                  <Box paddingBlock="200">
-                    <BlockStack gap="100">
-                      <InlineStack align="space-between">
-                        <Text variant="bodySm" as="p">📦 Products</Text>
-                        <Text variant="bodySm" fontWeight="bold" as="p">{stats.products}</Text>
-                      </InlineStack>
-                      <InlineStack align="space-between">
-                        <Text variant="bodySm" as="p">📁 Collections</Text>
-                        <Text variant="bodySm" fontWeight="bold" as="p">{stats.collections}</Text>
-                      </InlineStack>
-                      <InlineStack align="space-between">
-                        <Text variant="bodySm" as="p">🏷️ Active Discounts</Text>
-                        <Text variant="bodySm" fontWeight="bold" as="p">{stats.discounts}</Text>
-                      </InlineStack>
-                      <InlineStack align="space-between">
-                        <Text variant="bodySm" as="p">📝 Blog Articles</Text>
-                        <Text variant="bodySm" fontWeight="bold" as="p">{stats.articles}</Text>
-                      </InlineStack>
-                      <InlineStack align="space-between">
-                        <Text variant="bodySm" as="p">📄 Pages & Policies</Text>
-                        <Text variant="bodySm" fontWeight="bold" as="p">{stats.pages + stats.policies}</Text>
-                      </InlineStack>
-                    </BlockStack>
-                  </Box>
-
-                  <Divider />
-
-                  <InlineStack align="space-between" blockAlign="center">
-                    <Text variant="bodyMd" as="p">Daily auto-update</Text>
-                    <fetcher.Form method="post">
-                      <input type="hidden" name="intent" value="toggleAutoSync" />
-                      <input type="hidden" name="current" value={String(stats.autoSync)} />
-                      <button
-                        type="submit"
-                        style={{
-                          width: '40px',
-                          height: '24px',
-                          borderRadius: '12px',
-                          backgroundColor: stats.autoSync ? '#008060' : '#e1e3e5',
-                          border: 'none',
-                          position: 'relative',
-                          cursor: 'pointer',
-                          transition: 'background-color 0.2s'
-                        }}
-                      >
-                        <div style={{
-                          width: '18px',
-                          height: '18px',
-                          borderRadius: '50%',
-                          backgroundColor: 'white',
-                          position: 'absolute',
-                          top: '3px',
-                          left: stats.autoSync ? '19px' : '3px',
-                          transition: 'left 0.2s'
-                        }} />
-                      </button>
-                    </fetcher.Form>
-                  </InlineStack>
-
-                  <Divider />
-
-                  <fetcher.Form method="post">
-                    <input type="hidden" name="intent" value="index" />
-                    <Button
-                      variant="primary"
-                      icon={SaveIcon}
-                      fullWidth
-                      submit
-                      loading={isIndexing}
-                    >
-                      {stats.lastIndexed ? "Refresh Knowledge Base" : "Start Initial Indexing"}
-                    </Button>
-                  </fetcher.Form>
-
-                  {stats.lastIndexed && (
-                    <BlockStack gap="100" align="center">
-                      <Text variant="bodyXs" tone="subdued" alignment="center">
-                        Last Sync: {new Date(stats.lastIndexed).toLocaleDateString()} at {new Date(stats.lastIndexed).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </Text>
-                    </BlockStack>
-                  )}
                 </BlockStack>
               </Card>
             </BlockStack>
           </Layout.Section>
         </Layout>
       </BlockStack>
-
-      <Modal
-        open={isPreviewModalOpen}
-        onClose={() => setIsPreviewModalOpen(false)}
-        title="Full Assistant Preview"
-        primaryAction={{
-          content: 'Close',
-          onAction: () => setIsPreviewModalOpen(false),
-        }}
-      >
-        <Modal.Section>
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px', background: '#f4f6f8' }}>
-            <div
-              style={{
-                width: '400px',
-                border: '1px solid #e1e3e5',
-                borderRadius: `${borderRadius}px`,
-                overflow: 'hidden',
-                backgroundColor: bgColor,
-                boxShadow: '0 20px 50px rgba(0,0,0,0.15)',
-                opacity: opacity / 100
-              }}
-            >
-              <div style={{ height: '550px', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ backgroundColor: primaryColor, padding: '20px', color: 'white', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <div style={{ width: '45px', height: '45px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {avatarType === 'svg' && avatarSvg ? (
-                      <div dangerouslySetInnerHTML={{ __html: avatarSvg }} style={{ width: '30px', height: '30px' }} />
-                    ) : avatarType === 'custom' && avatarUrl ? (
-                      <img src={avatarUrl} style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover' }} />
-                    ) : (
-                      <Icon source={PersonIcon} />
-                    )}
-                  </div>
-                  <BlockStack gap="0">
-                    <Text variant="headingMd" as="h3" tone="inherit">{charName}</Text>
-                    <Text variant="bodySm" as="p" tone="inherit" style={{ opacity: 0.8 }}>{charRole}</Text>
-                  </BlockStack>
-                </div>
-                <div style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', background: '#f9fafb', overflowY: 'auto' }}>
-                  <div style={{ alignSelf: 'flex-start', backgroundColor: 'white', padding: '12px 16px', borderRadius: '16px', border: '1px solid #e1e3e5', maxWidth: '85%' }}>
-                    <Text variant="bodyMd" as="p" style={{ color: textColor }}>{charWelcome}</Text>
-                  </div>
-                  <div style={{ alignSelf: 'flex-end', backgroundColor: primaryColor, padding: '12px 16px', borderRadius: '16px', maxWidth: '85%', color: 'white' }}>
-                    <Text variant="bodyMd" as="p">Tell me more about your products.</Text>
-                  </div>
-                  <div style={{ alignSelf: 'flex-start', backgroundColor: 'white', padding: '12px 16px', borderRadius: '16px', border: '1px solid #e1e3e5', maxWidth: '85%' }}>
-                    <Text variant="bodyMd" as="p" style={{ color: textColor }}>I'd be happy to! We have a wide range of high-quality items designed to make your life easier...</Text>
-                  </div>
-                </div>
-                <div style={{ backgroundColor: 'white', padding: '20px', borderTop: '1px solid #e1e3e5' }}>
-                  <div style={{ height: '45px', border: '1px solid #e1e3e5', borderRadius: '22px', display: 'flex', alignItems: 'center', padding: '0 20px', background: '#f9fafb' }}>
-                    <Text variant="bodyMd" tone="subdued" as="p">Type your message here...</Text>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </Modal.Section>
-      </Modal>
     </Page>
   );
 }
