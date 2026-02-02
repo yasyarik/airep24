@@ -37,12 +37,23 @@ export const loader = async ({ request }) => {
     const { default: prisma } = await import("../db.server");
 
     // Get persistent stats from DB
-    let stats = await prisma.storeStats.findUnique({
+    let dbStats = await prisma.storeStats.findUnique({
       where: { shopDomain: session.shop }
     });
 
-    // If no stats yet, fetch initial counts
-    if (!stats) {
+    let stats;
+    if (dbStats) {
+      stats = {
+        products: dbStats.products,
+        collections: dbStats.collections,
+        discounts: dbStats.discounts,
+        articles: dbStats.articles,
+        pages: dbStats.pages,
+        policies: dbStats.policies,
+        shippingCountries: 0, // Не храним в StoreStats пока
+        lastIndexed: dbStats.lastIndexed ? dbStats.lastIndexed.toISOString() : null
+      };
+    } else {
       console.log("[DASHBOARD] Fetching initial stats from Shopify...");
       const response = await admin.graphql(
         `#graphql
