@@ -1,4 +1,4 @@
-import { json } from "react-router";
+import { data } from "react-router";
 import prisma from "../db.server";
 
 export const loader = async ({ request }) => {
@@ -6,7 +6,7 @@ export const loader = async ({ request }) => {
     const shop = url.searchParams.get("shop");
 
     if (!shop) {
-        return json({ error: "Missing shop parameter" }, { status: 400 });
+        return data({ error: "Missing shop parameter" }, { status: 400 });
     }
 
     const widgetConfig = await prisma.widgetConfig.findUnique({
@@ -18,10 +18,10 @@ export const loader = async ({ request }) => {
     });
 
     if (!widgetConfig || !characterConfig) {
-        return json({ enabled: false });
+        return { enabled: false };
     }
 
-    return json({
+    return {
         enabled: widgetConfig.enabled,
         config: {
             primaryColor: widgetConfig.primaryColor,
@@ -42,5 +42,5 @@ export const loader = async ({ request }) => {
             avatarSvg: characterConfig.avatarSvg,
             welcomeMessage: characterConfig.welcomeMessage
         }
-    });
+    };
 };
