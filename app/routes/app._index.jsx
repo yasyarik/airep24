@@ -36,16 +36,9 @@ import fs from "fs/promises";
 import path from "path";
 import { indexStoreData } from "../services/indexer.server";
 
-// Loader: Discover presets and load profiles with assets
 export const loader = async ({ request }) => {
   try {
     const { admin, session } = await authenticate.admin(request);
-    console.log("WHO IS ADMIN?:", Object.keys(admin || {}));
-    if (admin && admin.rest) {
-      console.log("Admin REST resources:", Object.keys(admin.rest.resources || {}));
-    } else {
-      console.warn("ADMIN.REST IS MISSING", admin ? Object.keys(admin) : "null");
-    }
 
     // 1. Discover Presets
     const presetsDir = path.join(process.cwd(), "extensions", "airep24-widget", "assets", "presets");
@@ -297,22 +290,9 @@ export const action = async ({ request }) => {
 };
 
 export default function Index() {
-  const { stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled, error, stack } = useLoaderData();
+  const { stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled } = useLoaderData();
   const fetcher = useFetcher();
   const uploadFetcher = useFetcher();
-
-  if (error) {
-    return (
-      <Page>
-        <Banner tone="critical" title="App Error">
-          <Text>{error}</Text>
-          <Box paddingBlockStart="200">
-            <pre style={{ overflow: 'auto', maxHeight: '400px', fontSize: '12px' }}>{stack}</pre>
-          </Box>
-        </Banner>
-      </Page>
-    );
-  }
 
   const [selectedProfileId, setSelectedProfileId] = useState(profiles?.find(p => p.isActive)?.id || profiles?.[0]?.id);
   const currentProfile = useMemo(() => profiles.find(p => p.id === selectedProfileId), [profiles, selectedProfileId]);
