@@ -279,7 +279,7 @@ export const action = async ({ request }) => {
     }
 
     if (intent === "index") {
-      console.log("DEBUG: Calling indexStoreData with admin type:", typeof admin, "and shop:", session.shop);
+      console.log("[DASHBOARD] Starting user-triggered sync");
       const result = await indexStoreData(admin, session.shop, prisma);
       return { success: result.success, indexResult: result };
     }
@@ -483,47 +483,59 @@ export default function Index() {
             <InlineStack align="space-between">
               <Text variant="headingMd" as="h2">Knowledge Base & Sync</Text>
               <Badge tone={stats.lastIndexed ? "success" : "attention"}>
-                {stats.lastIndexed ? "Synced" : "Sync Required"}
+                {stats.lastIndexed ? "Brain Updated" : "Brain Empty"}
               </Badge>
             </InlineStack>
 
             <Text as="p" tone="subdued">This information is shared across all AI personas. It includes your products, pages, articles, and store policies.</Text>
 
-            <InlineGrid columns={3} gap="200">
+            <InlineGrid columns={4} gap="200">
               <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                <BlockStack align="center">
+                <BlockStack align="center" gap="100">
                   <Text variant="headingLg" as="p">{stats.products}</Text>
                   <Text variant="bodySm" tone="subdued">Products</Text>
                 </BlockStack>
               </Box>
               <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                <BlockStack align="center">
+                <BlockStack align="center" gap="100">
                   <Text variant="headingLg" as="p">{stats.collections}</Text>
                   <Text variant="bodySm" tone="subdued">Collections</Text>
                 </BlockStack>
               </Box>
               <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                <BlockStack align="center">
+                <BlockStack align="center" gap="100">
                   <Text variant="headingLg" as="p">{stats.pages}</Text>
                   <Text variant="bodySm" tone="subdued">Pages</Text>
                 </BlockStack>
               </Box>
               <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                <BlockStack align="center">
+                <BlockStack align="center" gap="100">
                   <Text variant="headingLg" as="p">{stats.articles}</Text>
                   <Text variant="bodySm" tone="subdued">Blog Posts</Text>
                 </BlockStack>
               </Box>
               <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                <BlockStack align="center">
+                <BlockStack align="center" gap="100">
                   <Text variant="headingLg" as="p">{stats.policies}</Text>
-                  <Text variant="bodySm" tone="subdued">Policies</Text>
+                  <Text variant="bodySm" tone="subdued">Policies & Rules</Text>
                 </BlockStack>
               </Box>
               <Box padding="200" background="bg-surface-secondary" borderRadius="200">
-                <BlockStack align="center">
+                <BlockStack align="center" gap="100">
                   <Text variant="headingLg" as="p">{stats.discounts}</Text>
                   <Text variant="bodySm" tone="subdued">Discounts</Text>
+                </BlockStack>
+              </Box>
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                <BlockStack align="center" gap="100">
+                  <Text variant="headingLg" as="p">Enabled</Text>
+                  <Text variant="bodySm" tone="subdued">Metaobjects</Text>
+                </BlockStack>
+              </Box>
+              <Box padding="200" background="bg-surface-secondary" borderRadius="200">
+                <BlockStack align="center" gap="100">
+                  <Text variant="headingLg" as="p">Enabled</Text>
+                  <Text variant="bodySm" tone="subdued">Metafields</Text>
                 </BlockStack>
               </Box>
             </InlineGrid>
@@ -533,13 +545,14 @@ export default function Index() {
                 <Text variant="bodySm" tone="subdued">
                   Last Update: {stats.lastIndexed ? new Date(stats.lastIndexed).toLocaleString() : "Never"}
                 </Text>
+                <Checkbox label="Auto-sync daily" checked={stats.autoSync} onChange={() => { }} />
               </BlockStack>
               <Button
                 variant="primary"
                 onClick={() => fetcher.submit({ intent: 'index' }, { method: 'post' })}
                 loading={fetcher.state !== 'idle'}
               >
-                Sync All Data Now
+                Sync Data & Retrain AI
               </Button>
             </InlineStack>
           </BlockStack>
