@@ -159,9 +159,10 @@ export const loader = async ({ request }) => {
           // Look for our widget
           for (const key in blocks) {
             const block = blocks[key];
-            // Type format: "shopify:\/\/apps\/airep24\/extensions\/airep24-widget\/..."
+            if (block.type) console.log("Checking block type:", block.type);
             if (block.type && block.type.includes("airep24-widget")) {
               themeEnabled = !block.disabled;
+              if (themeEnabled) console.log("MATCH FOUND AND ENABLED!");
               break;
             }
           }

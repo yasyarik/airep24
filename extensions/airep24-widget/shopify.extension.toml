@@ -1,6 +1,7 @@
 api_version = "2026-04"
 
 [[extensions]]
+uid = "698e42ed-839d-f87f-db2f-acc341de3dfaddb21b5d"
 type = "theme"
 name = "airep24-widget"
 handle = "airep24-widget"
