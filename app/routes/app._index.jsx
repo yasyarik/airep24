@@ -36,16 +36,11 @@ import fs from "fs/promises";
 import path from "path";
 import { indexStoreData } from "../services/indexer.server";
 
-console.error("DEBUG: LOADING APP_INDEX ROUTE MODULE");
 // Loader: Discover presets and load profiles with assets
 export const loader = async ({ request }) => {
-  console.log("DEBUG: START LOADER", request.url);
   try {
     const { admin, session } = await authenticate.admin(request);
-    await fs.appendFile("/tmp/airep_debug.log", `[${new Date().toISOString()}] Admin Keys: ${Object.keys(admin || {}).join(", ")}\n`);
-    if (admin) {
-      await fs.appendFile("/tmp/airep_debug.log", `Graphql: ${typeof admin.graphql}, Rest: ${typeof admin.rest}\n`);
-    }
+    console.log("WHO IS ADMIN?:", Object.keys(admin || {}));
     if (admin && admin.rest) {
       console.log("Admin REST resources:", Object.keys(admin.rest.resources || {}));
     } else {
