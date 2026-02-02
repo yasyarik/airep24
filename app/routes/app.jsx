@@ -12,9 +12,13 @@ export const loader = async ({ request }) => {
   const { session } = await authenticate.admin(request);
   const { default: prisma } = await import("../db.server");
 
-  // Fetch count of active chats (mocking logic for now since model is simple)
-  // In a real scenario, this would be: await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } })
-  const activeChatCount = 12; // MOCKED for now to show the effect
+  // Fetch real count of active chats
+  const activeChatCount = await prisma.chatSession.count({
+    where: {
+      shopDomain: session.shop,
+      status: 'ACTIVE'
+    }
+  });
 
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",

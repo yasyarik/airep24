@@ -96,11 +96,17 @@ export const loader = async ({ request }) => {
       });
     }
 
+    // Get active chat count
+    const activeChatCount = await prisma.chatSession.count({
+      where: { shopDomain: session.shop, status: 'ACTIVE' }
+    });
+
     return {
       shop: session.shop,
       stats,
       widgetConfig,
-      characterConfig
+      characterConfig,
+      activeChatCount
     };
   } catch (error) {
     console.error("[LOADER ERROR]:", error);
@@ -158,7 +164,7 @@ export const action = async ({ request }) => {
 };
 
 export default function Index() {
-  const { stats, widgetConfig, characterConfig } = useLoaderData();
+  const { stats, widgetConfig, characterConfig, activeChatCount } = useLoaderData();
   const fetcher = useFetcher();
   const isIndexing = fetcher.state !== "idle";
   const isSaving = fetcher.state !== "idle" && fetcher.formData?.get("intent")?.startsWith("save");
@@ -232,7 +238,7 @@ export default function Index() {
             <Text as="p" variant="bodyMd">
               Your AI Assistant is currently <strong>Active</strong> in your store.
             </Text>
-            <Badge tone="success">12 Live Chats</Badge>
+            <Badge tone="success">{activeChatCount} Live Chats</Badge>
           </div>
         </Banner>
 

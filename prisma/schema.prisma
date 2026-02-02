@@ -155,3 +155,26 @@ model CharacterConfig {
   instructions String   @default("You are a helpful and friendly shopping assistant for our Shopify store.")
   updatedAt    DateTime @updatedAt
 }
+
+model ChatSession {
+  id           String   @id @default(uuid())
+  shopDomain   String
+  customerName String   @default("Guest")
+  status       String   @default("ACTIVE") // ACTIVE, RESOLVED
+  aiStatus     String   @default("AI_ON")  // AI_ON, AI_OFF
+  lastMessage  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  messages     ChatMessage[]
+
+  @@index([shopDomain])
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id])
+  sender    String   // customer, ai, human
+  text      String
+  createdAt DateTime @default(now())
+}
