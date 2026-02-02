@@ -24,7 +24,8 @@ import {
   DropZone,
   InlineGrid,
 } from "@shopify/polaris";
-import { Theme, Asset } from "@shopify/shopify-api/rest/admin/2025-10";
+import { restResources } from "@shopify/shopify-api/rest/admin/2025-10";
+const { Theme, Asset } = restResources;
 import {
   ChatIcon,
   PersonIcon,
