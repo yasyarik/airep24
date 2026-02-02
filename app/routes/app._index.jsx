@@ -30,11 +30,14 @@ import {
   DeleteIcon,
 } from "@shopify/polaris-icons";
 
+import prisma from "../db.server";
+import { authenticate } from "../shopify.server";
+import { indexStoreData } from "../services/indexer.server";
+
 export const loader = async ({ request }) => {
   try {
-    const { authenticate } = await import("../shopify.server");
     const { admin, session } = await authenticate.admin(request);
-    const { default: prisma } = await import("../db.server");
+    // const { default: prisma } = await import("../db.server"); // Removed, now imported at top
 
     // Get persistent stats from DB
     let dbStats = await prisma.storeStats.findUnique({
@@ -96,20 +99,20 @@ export const loader = async ({ request }) => {
 };
 
 export const action = async ({ request }) => {
-  const { authenticate } = await import("../shopify.server");
-  const { admin, session } = await authenticate.admin(request);
-  const { default: prisma } = await import("../db.server");
-  const { indexStoreData } = await import("../services/indexer.server");
+  try {
+    const { admin, session } = await authenticate.admin(request);
+    const formData = await request.formData();
+    const intent = formData.get("intent");
 
-  const formData = await request.formData();
-  const intent = formData.get("intent");
-
-  if (intent === "index") {
-    const result = await indexStoreData(admin, session.shop, prisma);
-    return { success: result.success, message: result.success ? "Successfully indexed store data!" : "Indexing failed." };
+    if (intent === "index") {
+      const result = await indexStoreData(admin, session.shop, prisma);
+      return { success: result.success, message: result.success ? "Successfully indexed store data!" : "Indexing failed." };
+    }
+    return null;
+  } catch (error) {
+    console.error("[ACTION ERROR]:", error);
+    return { success: false, error: error.message };
   }
-
-  return null;
 };
 
 export default function Index() {
