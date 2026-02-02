@@ -77,7 +77,8 @@ export const loader = async ({ request }) => {
       orderBy: { createdAt: 'asc' }
     });
 
-    // 3. Ensure System Presets (Sync DB with File System Presets)
+    // 3. Sync DB with File System Presets
+    // A. Create missing presets
     for (const p of discoveredPresets) {
       const existing = profiles.find(pr => pr.avatarId === p.id && pr.avatarType === 'preset');
       if (!existing) {
@@ -95,7 +96,7 @@ export const loader = async ({ request }) => {
             shopDomain: session.shop,
             name: p.name,
             isPreset: true,
-            isActive: profiles.length === 0 && p.id === 'anna',
+            isActive: profiles.length === 0, // Only active if it's the first one
             avatarType: 'preset',
             avatarId: p.id,
             role: "Shopping Assistant",
@@ -106,6 +107,23 @@ export const loader = async ({ request }) => {
         profiles.push(newP);
       }
     }
+
+    // B. Remove orphaned presets (exist in DB but file deleted)
+    const validPresetIds = discoveredPresets.map(d => d.id);
+    const orphans = profiles.filter(p => p.avatarType === 'preset' && !validPresetIds.includes(p.avatarId));
+
+    for (const orphan of orphans) {
+      await prisma.characterProfile.delete({ where: { id: orphan.id } });
+    }
+
+    // Filter profiles list for UI
+    profiles = profiles.filter(p => !(p.avatarType === 'preset' && !validPresetIds.includes(p.avatarId)));
+
+    // Mark presets in memory for the UI to know (redundant check but good for safety)
+    profiles = profiles.map(p => ({
+      ...p,
+      isPreset: p.avatarType === 'preset'
+    }));
 
     // 4. Stats & Widget Config
     let dbStats = await prisma.storeStats.findUnique({ where: { shopDomain: session.shop } });
