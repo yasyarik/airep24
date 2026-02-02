@@ -357,31 +357,33 @@ export default function Index() {
                       {/* 3 columns grid */}
                       <Grid>
                         {profiles.map(p => (
-                          <Grid.Cell key={p.id} columnSpan={{ xs: 6, sm: 3, md: 4, lg: 4 }}>
-                            <div
-                              onClick={() => setSelectedProfileId(p.id)}
-                              style={{
-                                padding: '20px',
-                                border: selectedProfileId === p.id ? '2px solid #4f46e5' : '1px solid #e1e3e5',
-                                borderRadius: '16px',
-                                cursor: 'pointer',
-                                backgroundColor: selectedProfileId === p.id ? '#f5f5ff' : 'white',
-                                transition: 'all 0.2s',
-                                textAlign: 'center'
-                              }}
-                            >
-                              <BlockStack gap="200" align="center">
-                                <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#eee', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                                  {p.avatarType === 'image' && p.avatarUrl ? <img src={p.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <Icon source={PersonIcon} />}
-                                </div>
-                                <Text variant="bodyLg" fontWeight="bold">{p.name}</Text>
-                                <InlineStack gap="100" align="center">
-                                  {p.isActive ? <Badge tone="success">Active</Badge> : <Button size="slim" onClick={(e) => { e.stopPropagation(); fetcher.submit({ intent: "setActive", id: p.id }, { method: "post" }); }}>Set Active</Button>}
-                                  {p.isPreset && <Badge tone="info">Preset</Badge>}
-                                </InlineStack>
-                              </BlockStack>
-                            </div>
-                          </Grid.Cell>
+                          <div
+                            key={p.id}
+                            onClick={() => setSelectedProfileId(p.id)}
+                            style={{
+                              padding: '20px',
+                              border: selectedProfileId === p.id ? '2px solid #4f46e5' : '1px solid #e1e3e5',
+                              borderRadius: '16px',
+                              cursor: 'pointer',
+                              backgroundColor: selectedProfileId === p.id ? '#f5f5ff' : 'white',
+                              transition: 'all 0.2s',
+                              textAlign: 'center',
+                              position: 'relative'
+                            }}
+                          >
+                            <BlockStack gap="200" align="center">
+                              <div style={{ width: '50px', height: '50px', borderRadius: '50%', background: '#eee', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                {p.avatarType === 'image' && p.avatarUrl ? <img src={p.avatarUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> :
+                                  p.avatarType === 'preset' ? <div style={{ fontWeight: 'bold', color: '#666' }}>{p.avatarId.substring(0, 2).toUpperCase()}</div> :
+                                    <Icon source={PersonIcon} />}
+                              </div>
+                              <Text variant="bodyLg" fontWeight="bold">{p.name}</Text>
+                              <InlineStack gap="100" align="center">
+                                {p.isActive ? <Badge tone="success">Active</Badge> : <Button size="slim" onClick={(e) => { e.stopPropagation(); fetcher.submit({ intent: "setActive", id: p.id }, { method: "post" }); }}>Set Active</Button>}
+                                {p.isPreset && <Badge tone="info">Preset</Badge>}
+                              </InlineStack>
+                            </BlockStack>
+                          </div>
                         ))}
                       </Grid>
 
