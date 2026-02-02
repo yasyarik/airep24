@@ -24,6 +24,7 @@ import {
   DropZone,
   InlineGrid,
 } from "@shopify/polaris";
+import { Theme, Asset } from "@shopify/shopify-api/rest/admin/2025-10";
 import {
   ChatIcon,
   PersonIcon,
@@ -138,37 +139,28 @@ export const loader = async ({ request }) => {
     const activeChatCount = await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } });
 
     // 5. Check True Theme Status (App Embed)
-    // 5. Check True Theme Status (App Embed)
     let themeEnabled = false;
     try {
-      if (admin.rest) {
-        const ThemeResource = admin.rest.resources.Theme;
-        const themes = await ThemeResource.all({ session });
-        const mainThemeArray = themes.data || (Array.isArray(themes) ? themes : []);
-        const mainTheme = mainThemeArray.find(t => t.role === 'main');
+      const themes = await Theme.all({ session });
+      const themesData = themes.data || (Array.isArray(themes) ? themes : []);
+      const mainTheme = themesData.find(t => t.role === 'main');
 
-        if (mainTheme) {
-          const assetResponse = await admin.rest.resources.Asset.all({
-            session,
-            theme_id: mainTheme.id,
-            asset: { key: 'config/settings_data.json' }
-          });
+      if (mainTheme) {
+        const assetResponse = await Asset.all({
+          session,
+          theme_id: mainTheme.id,
+          asset: { key: 'config/settings_data.json' }
+        });
 
-          const settingsAsset = assetResponse.data ? assetResponse.data[0] : (Array.isArray(assetResponse) ? assetResponse[0] : null);
+        const assets = assetResponse.data || (Array.isArray(assetResponse) ? assetResponse : []);
+        const settingsAsset = assets[0];
 
-          if (settingsAsset && settingsAsset.value) {
-            const json = JSON.parse(settingsAsset.value);
-            const blocks = json.current?.blocks || {};
-            // Look for our block in the settings
-            themeEnabled = Object.values(blocks).some(block =>
-              block.type?.includes('airep24-widget') && !block.disabled
-            );
-
-            // Log for debugging if not found
-            if (!themeEnabled) {
-              console.log("App Embed block not found enabled in settings_data.json. Blocks:", Object.keys(blocks).length);
-            }
-          }
+        if (settingsAsset && settingsAsset.value) {
+          const json = JSON.parse(settingsAsset.value);
+          const blocks = json.current?.blocks || {};
+          themeEnabled = Object.values(blocks).some(block =>
+            block.type?.includes('airep24-widget') && !block.disabled
+          );
         }
       }
     } catch (e) {
