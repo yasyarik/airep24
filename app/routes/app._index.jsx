@@ -77,13 +77,15 @@ export const loader = async ({ request }) => {
 
     // Ensure system presets exist in DB for this shop
     for (const p of discoveredPresets) {
-      const existing = profiles.find(pr => pr.avatarId === p.id && pr.isPreset);
+      // Logic: Find profile with this avatarId. If it exists, we assume it's the preset.
+      // We can't rely on 'isPreset' field due to schema mismatch on server at the moment.
+      const existing = profiles.find(pr => pr.avatarId === p.id); // Loose check
       if (!existing) {
         const newP = await prisma.characterProfile.create({
           data: {
             shopDomain: session.shop,
             name: p.name,
-            isPreset: true,
+            // isPreset: true, // REMOVED to fix server crash
             isActive: profiles.length === 0 && p.id === 'anna',
             avatarType: 'preset',
             avatarId: p.id,
@@ -93,6 +95,12 @@ export const loader = async ({ request }) => {
         profiles.push(newP);
       }
     }
+
+    // Mark presets in memory for the UI to know
+    profiles = profiles.map(p => ({
+      ...p,
+      isPreset: discoveredPresets.some(dp => dp.id === p.avatarId && p.avatarType === 'preset')
+    }));
 
     // Stats and Configs
     let dbStats = await prisma.storeStats.findUnique({ where: { shopDomain: session.shop } });
@@ -140,7 +148,7 @@ export const action = async ({ request }) => {
 
     if (intent === "createProfile") {
       await prisma.characterProfile.create({
-        data: { shopDomain: session.shop, name: "Custom Persona", role: "Assistant", isPreset: false }
+        data: { shopDomain: session.shop, name: "Custom Persona", role: "Assistant" } // Removed isPreset: false
       });
       return { success: true };
     }
@@ -148,7 +156,14 @@ export const action = async ({ request }) => {
     if (intent === "deleteProfile") {
       const id = formData.get("id");
       const profile = await prisma.characterProfile.findUnique({ where: { id } });
-      if (profile && !profile.isPreset) {
+
+      // Load presets logic again to verify
+      const presetsDir = path.join(process.cwd(), "extensions", "airep24-widget", "assets", "presets");
+      // Simplified check for now: if avatarType is preset and avatarId starts with anna/ava etc.
+      // Or just check strictly against known IDs if possible.
+      // Better: Don't allow deleting if avatarType == 'preset' for now
+
+      if (profile && profile.avatarType !== 'preset') {
         await prisma.characterProfile.delete({ where: { id } });
         const hasActive = await prisma.characterProfile.findFirst({ where: { shopDomain: session.shop, isActive: true } });
         if (!hasActive) {
