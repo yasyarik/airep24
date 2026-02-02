@@ -11,216 +11,118 @@ import {
     Banner,
     Box,
     Divider,
-    Link
+    Grid
 } from "@shopify/polaris";
-import "@shopify/polaris/build/esm/styles.css";
-
-import { BILLING_PLANS, PLANS_CONFIG } from "../config/billing";
+import { CheckIcon } from "@shopify/polaris-icons";
 
 export const loader = async ({ request }) => {
-    try {
-        console.log("[PRICING] Loader started");
-        const { authenticate } = await import("../shopify.server");
-        const { default: prisma } = await import("../db.server");
+    const { authenticate } = await import("../shopify.server");
+    const { default: prisma } = await import("../db.server");
+    const { session } = await authenticate.admin(request);
 
-        console.log("[PRICING] Authenticating...");
-        const { session, admin } = await authenticate.admin(request);
-        console.log("[PRICING] Authenticated shop:", session.shop);
+    let shop = await prisma.shop.findUnique({
+        where: { shopDomain: session.shop }
+    });
 
-        const shopUrl = session.shop;
-        const shopName = shopUrl.replace('.myshopify.com', '');
-        // Use App ID from environment or hardcoded fallback matching the screenshot
-        const appId = process.env.SHOPIFY_APP_ID || '282510181c7fd3346b35a67d036f46bc';
-
-        let shop = await prisma.shop.findUnique({
-            where: { shopDomain: shopUrl }
-        });
-
-        // --- SYNC PLAN WITH SHOPIFY ---
-        try {
-            console.log("[PRICING] Syncing plan...");
-            const response = await admin.graphql(
-                `#graphql
-                query {
-                    currentAppInstallation {
-                        activeSubscriptions {
-                            name
-                            status
-                            test
-                        }
-                    }
-                }`
-            );
-            const result = await response.json();
-            const activeSubscriptions = result.data?.currentAppInstallation?.activeSubscriptions || [];
-
-            if (activeSubscriptions.length > 0) {
-                const activeSubscription = activeSubscriptions[0];
-                const activePlanName = activeSubscription.name.toLowerCase();
-
-                // Find matching plan by name (case-insensitive and handling 'standart' typo)
-                const matchedPlanKey = Object.keys(BILLING_PLANS).find(key => {
-                    const configName = BILLING_PLANS[key].name.toLowerCase();
-                    if (activePlanName === configName) return true;
-                    if (activePlanName === 'standart' && configName === 'standard') return true;
-                    return false;
-                });
-
-                if (matchedPlanKey && shop?.subscriptionPlan !== matchedPlanKey &&
-                    (activeSubscription.status === 'ACTIVE' || activeSubscription.status === 'ACCEPTED')) {
-
-                    console.log(`[PRICING] Syncing plan from Shopify: ${shop?.subscriptionPlan} -> ${matchedPlanKey}`);
-                    const planConfig = BILLING_PLANS[matchedPlanKey];
-                    shop = await prisma.shop.update({
-                        where: { id: shop.id },
-                        data: {
-                            subscriptionPlan: matchedPlanKey,
-                            monthlyCredits: planConfig.credits,
-                            credits: planConfig.credits,
-                        }
-                    });
-                }
-            } else if (shop?.subscriptionPlan !== 'FREE') {
-                console.log(`[PRICING] No active subscription found, syncing to FREE plan`);
-                shop = await prisma.shop.update({
-                    where: { id: shop.id },
-                    data: {
-                        subscriptionPlan: 'FREE',
-                        monthlyCredits: BILLING_PLANS.FREE.credits,
-                    }
-                });
-            }
-        } catch (err) {
-            console.error("[PRICING] Failed to sync plan with Shopify:", err);
-        }
-        // -----------------------------
-
-        return data({
-            shop,
-            currentPlan: shop?.subscriptionPlan || 'FREE',
-            credits: shop?.credits || 0,
-            monthlyCredits: shop?.monthlyCredits || 10,
-            shopName,
-            appId
-        });
-    } catch (error) {
-        // Handle Response objects thrown by Shopify (redirects, 410, etc)
-        // Check for status property even if instanceof Response fails (different contexts)
-        const status = error?.status || (error instanceof Response ? error.status : null);
-
-        if (status) {
-            console.log(`[PRICING] Caught Response/Error with status: ${status}`);
-
-            if (status === 410) {
-                console.error("[PRICING] 410 Gone - App Uninstalled or Session Invalid");
-                // Return a data object to render a nice error instead of crashing
-                return data({
-                    error: "App session invalid or uninstalled. Please reinstall the app.",
-                    shop: null,
-                    currentPlan: 'FREE',
-                    credits: 0,
-                    monthlyCredits: 0,
-                    shopName: '',
-                    appId: process.env.SHOPIFY_APP_ID
-                });
-            }
-            // Re-throw other responses (redirects like 302)
-            throw error;
-        }
-
-        console.error("[PRICING] Loader Fatal Error:", error);
-        throw error;
-    }
+    return data({
+        currentPlan: shop?.subscriptionPlan || 'FREE',
+        shopDomain: session.shop
+    });
 };
 
-
-
 export default function Pricing() {
-    const loaderData = useLoaderData();
-    console.log("[PRICING] Component Render Data:", JSON.stringify(loaderData, null, 2));
-    const { shop, currentPlan, credits, monthlyCredits, shopName, appId } = loaderData;
+    const { currentPlan } = useLoaderData();
 
-    // Helper to check if a plan is current
-    const isCurrentPlan = (basePlanId) => {
-        if (basePlanId === 'FREE') return currentPlan === 'FREE';
-        return currentPlan === basePlanId || currentPlan === `${basePlanId}_ANNUAL`;
-    };
-
-    // Use App Handle from user's browser URL
-    // https://admin.shopify.com/store/:store_handle/charges/:app_handle/pricing_plans
-    const appHandle = 'myugcstudio-1';
-    const managedPricingUrl = `https://admin.shopify.com/store/${shopName}/charges/${appHandle}/pricing_plans`;
+    const plans = [
+        {
+            id: 'FREE',
+            name: 'Starter',
+            price: '$0',
+            features: ['20 AI Conversations / mo', 'Standard AI Model', 'Basic Knowledge Base'],
+            button: 'Current Plan'
+        },
+        {
+            id: 'GROWTH',
+            name: 'Growth',
+            price: '$29',
+            features: ['500 AI Conversations / mo', 'Custom Brand Voice', 'Instant Sync with Catalog', 'Telegram Notifications'],
+            button: 'Upgrade to Growth',
+            popular: true
+        },
+        {
+            id: 'SCALE',
+            name: 'Scale',
+            price: '$99',
+            features: ['Unlimited Conversations', 'Priority AI Processing', 'Dedicated Support', 'Advanced Analytics'],
+            button: 'Upgrade to Scale'
+        }
+    ];
 
     return (
-        <Page title="Pricing & Billing">
-            <Layout>
-                <Layout.Section>
-                    <Card>
-                        <BlockStack gap="500">
-                            <BlockStack gap="200">
-                                <Text variant="headingLg" as="h2">Current Subscription</Text>
-                                <Text variant="bodyMd" tone="subdued">
-                                    Manage your plan and billing details directly in Shopify.
-                                </Text>
-                            </BlockStack>
+        <Page title="Pricing Plans">
+            <BlockStack gap="500">
+                <Banner tone="info">
+                    <Text as="p">
+                        All plans include a 7-day free trial. You can change your plan at any time through Shopify Billing.
+                    </Text>
+                </Banner>
 
-                            <Divider />
+                <Grid>
+                    {plans.map((plan) => (
+                        <Grid.Cell key={plan.id} columnSpan={{ xs: 6, sm: 6, md: 4, lg: 4 }}>
+                            <Card roundedAbove="sm">
+                                <BlockStack gap="400">
+                                    <InlineStack align="space-between">
+                                        <Text variant="headingLg" as="h2">{plan.name}</Text>
+                                        {plan.popular && <Badge tone="attention">Most Popular</Badge>}
+                                    </InlineStack>
 
-                            <InlineStack align="space-between" blockAlign="center">
-                                <BlockStack gap="100">
-                                    <Text variant="headingMd" as="h3">Active Plan</Text>
-                                    <Badge tone="info" size="large">
-                                        {currentPlan.replace('_ANNUAL', ' (Annual)')}
-                                    </Badge>
-                                </BlockStack>
+                                    <InlineStack align="start" blockAlign="baseline" gap="100">
+                                        <Text variant="heading2xl" as="p">{plan.price}</Text>
+                                        <Text variant="bodyMd" tone="subdued" as="span">/ month</Text>
+                                    </InlineStack>
 
-                                <BlockStack gap="100" align="end">
-                                    <Text variant="headingMd" as="h3">Credits Remaining</Text>
-                                    <Text variant="heading2xl" as="p">{credits}</Text>
-                                    <Text variant="bodySm" tone="subdued">of {monthlyCredits} monthly</Text>
-                                </BlockStack>
-                            </InlineStack>
+                                    <Divider />
 
-                            <Divider />
-
-                            <BlockStack gap="400">
-                                <Banner tone="info" title="How credits work">
                                     <BlockStack gap="200">
-                                        <Text as="p">
-                                            Credits are consumed when you generate new content:
-                                        </Text>
-                                        <InlineStack gap="400">
-                                            <Badge tone="success">1 Credit per Image</Badge>
-                                            <Badge tone="attention">5 Credits per Video</Badge>
-                                        </InlineStack>
+                                        {plan.features.map((feature, i) => (
+                                            <InlineStack key={i} gap="200" wrap={false}>
+                                                <div style={{ width: '20px' }}>
+                                                    <CheckIcon style={{ fill: '#008060' }} />
+                                                </div>
+                                                <Text variant="bodyMd" as="p">{feature}</Text>
+                                            </InlineStack>
+                                        ))}
                                     </BlockStack>
-                                </Banner>
-                                <Banner tone="info">
-                                    <p>
-                                        To upgrade, downgrade, or cancel your subscription, please visit the Shopify Plan Settings page.
-                                    </p>
-                                </Banner>
 
-                                <Button
-                                    variant="primary"
-                                    size="large"
-                                    url={managedPricingUrl}
-                                    target="_top"
-                                    fullWidth
-                                >
-                                    Manage Subscription on Shopify
-                                </Button>
-                            </BlockStack>
+                                    <Box paddingBlockStart="400">
+                                        <Button
+                                            variant={plan.popular ? 'primary' : 'secondary'}
+                                            fullWidth
+                                            disabled={currentPlan === plan.id}
+                                            size="large"
+                                        >
+                                            {currentPlan === plan.id ? 'Active' : plan.button}
+                                        </Button>
+                                    </Box>
+                                </BlockStack>
+                            </Card>
+                        </Grid.Cell>
+                    ))}
+                </Grid>
 
-                            <BlockStack gap="200">
-                                <Text variant="bodySm" tone="subdued" alignment="center">
-                                    Need a custom enterprise plan? <a href="mailto:info@myugc.studio" style={{ color: 'inherit', textDecoration: 'underline' }}>Contact us</a>.
-                                </Text>
-                            </BlockStack>
-                        </BlockStack>
-                    </Card>
-                </Layout.Section>
-            </Layout>
+                <Card>
+                    <BlockStack gap="200">
+                        <Text variant="headingMd" as="h3">Need more than Scale?</Text>
+                        <Text as="p" tone="subdued">
+                            If your shop handles more than 10,000 chats per month, contact us for a custom Enterprise solution with dedicated AI training.
+                        </Text>
+                        <InlineStack align="end">
+                            <Button variant="tertiary">Contact Support</Button>
+                        </InlineStack>
+                    </BlockStack>
+                </Card>
+            </BlockStack>
         </Page>
     );
 }
