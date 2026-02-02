@@ -1,11 +1,11 @@
-import { json } from "@remix-run/node"; // or react-router
+import { data } from "react-router";
 import { unauthenticated } from "../shopify.server";
 import prisma from "../db.server";
 import { generateChatResponse } from "../services/ai.server";
 
 export const action = async ({ request }) => {
     if (request.method !== "POST") {
-        return json({ error: "Method not allowed" }, { status: 405 });
+        return data({ error: "Method not allowed" }, { status: 405 });
     }
 
     try {
@@ -13,7 +13,7 @@ export const action = async ({ request }) => {
         const { shop, messages, currentPath } = body;
 
         if (!shop || !messages) {
-            return json({ error: "Missing required fields" }, { status: 400 });
+            return data({ error: "Missing required fields" }, { status: 400 });
         }
 
         // 1. Get Admin Context
@@ -23,7 +23,7 @@ export const action = async ({ request }) => {
             admin = session.admin;
         } catch (e) {
             console.error("Failed to get admin session:", e);
-            return json({ error: "Shop not authorized" }, { status: 401 });
+            return data({ error: "Shop not authorized" }, { status: 401 });
         }
 
         // 2. Load Active Character Profile
@@ -32,7 +32,7 @@ export const action = async ({ request }) => {
         });
 
         if (!profile) {
-            return json({ error: "No active assistant found" }, { status: 404 });
+            return data({ error: "No active assistant found" }, { status: 404 });
         }
 
         // 3. Construct System Prompt
@@ -219,7 +219,7 @@ export const action = async ({ request }) => {
 
     } catch (error) {
         console.error("Chat API Error:", error);
-        return json({ error: error.message }, { status: 500, headers: { "Access-Control-Allow-Origin": "*" } });
+        return data({ error: error.message }, { status: 500, headers: { "Access-Control-Allow-Origin": "*" } });
     }
 };
 
@@ -234,5 +234,5 @@ export const loader = async ({ request }) => {
             }
         });
     }
-    return json({});
+    return data({});
 };
