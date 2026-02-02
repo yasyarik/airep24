@@ -30,6 +30,8 @@ import {
   SaveIcon,
   DeleteIcon,
   ViewIcon,
+  SettingsIcon,
+  CheckIcon,
 } from "@shopify/polaris-icons";
 
 export const loader = async ({ request }) => {
@@ -57,26 +59,15 @@ export const loader = async ({ request }) => {
         lastIndexed: dbStats.lastIndexed ? dbStats.lastIndexed.toISOString() : null
       };
     } else {
-      console.log("[DASHBOARD] Fetching initial stats from Shopify...");
-      const response = await admin.graphql(
-        `#graphql
-        query getStoreStats {
-          productsCount { count }
-          collectionsCount { count }
-          shop { shipsToCountries }
-        }`
-      );
-      const result = await response.json();
-
       stats = {
-        products: result.data?.productsCount?.count || 0,
-        collections: result.data?.collectionsCount?.count || 0,
+        products: 0,
+        collections: 0,
         discounts: 0,
         articles: 0,
         pages: 0,
         policies: 4,
         autoSync: true,
-        shippingCountries: result.data?.shop?.shipsToCountries?.length || 0,
+        shippingCountries: 0,
         lastIndexed: null
       };
     }
@@ -147,6 +138,15 @@ export const action = async ({ request }) => {
       return { success: true };
     }
 
+    if (intent === "toggleEnabled") {
+      const current = formData.get("current") === "true";
+      await prisma.widgetConfig.update({
+        where: { shopDomain: session.shop },
+        data: { enabled: !current }
+      });
+      return { success: true };
+    }
+
     if (intent === "toggleAutoSync") {
       const current = formData.get("current") === "true";
       await prisma.storeStats.update({
@@ -171,6 +171,10 @@ export default function Index() {
 
   // Character States
   const [charName, setCharName] = useState(characterConfig.name);
+  const [avatarType, setAvatarType] = useState(characterConfig.avatarType || "preset");
+  const [avatarId, setAvatarId] = useState(characterConfig.avatarId || "anna");
+  const [avatarUrl, setAvatarUrl] = useState(characterConfig.avatarUrl || "");
+  const [avatarSvg, setAvatarSvg] = useState(characterConfig.avatarSvg || "");
   const [charRole, setCharRole] = useState(characterConfig.role);
   const [charWelcome, setCharWelcome] = useState(characterConfig.welcomeMessage);
   const [charInstructions, setCharInstructions] = useState(characterConfig.instructions);
@@ -215,6 +219,10 @@ export default function Index() {
         intent: "saveCharacter",
         data: JSON.stringify({
           name: charName,
+          avatarType,
+          avatarId,
+          avatarUrl,
+          avatarSvg,
           role: charRole,
           welcomeMessage: charWelcome,
           instructions: charInstructions
@@ -224,21 +232,38 @@ export default function Index() {
     );
   };
 
+  const characterPresets = [
+    { id: 'anna', name: 'Anna', color: '#4F46E5', desc: 'Friendly Support' },
+    { id: 'ava', name: 'Ava', color: '#10B981', desc: 'Energy & Tech' },
+    { id: 'sofia', name: 'Sofia', color: '#EC4899', desc: 'Luxury & Style' }
+  ];
+
   const tabs = [
-    { id: 'character', content: 'Character', accessibilityLabel: 'Character Settings', panelID: 'character-panel' },
+    { id: 'character', content: 'Character & Avatar', accessibilityLabel: 'Character Settings', panelID: 'character-panel' },
     { id: 'widget', content: 'Widget Styling', accessibilityLabel: 'Widget Styling', panelID: 'widget-panel' },
     { id: 'faq', content: 'FAQ Editor', accessibilityLabel: 'FAQ Editor', panelID: 'faq-panel' },
   ];
 
   return (
-    <Page title="AiRep24 Dashboard">
+    <Page
+      title="AiRep24 Dashboard"
+      secondaryActions={[
+        {
+          content: widgetConfig.enabled ? "Disable Widget" : "Enable Widget",
+          outline: widgetConfig.enabled,
+          tone: widgetConfig.enabled ? "critical" : "success",
+          onAction: () => fetcher.submit({ intent: "toggleEnabled", current: String(widgetConfig.enabled) }, { method: "post" }),
+          loading: fetcher.state !== "idle" && fetcher.formData?.get("intent") === "toggleEnabled"
+        }
+      ]}
+    >
       <BlockStack gap="500">
-        <Banner tone="info" hideLinks>
+        <Banner tone={widgetConfig.enabled ? "success" : "warning"} hideLinks>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <Text as="p" variant="bodyMd">
-              Your AI Assistant is currently <strong>Active</strong> in your store.
+              AI Assistant is {widgetConfig.enabled ? <strong>Active</strong> : <strong>Disabled</strong>} in your theme.
             </Text>
-            <Badge tone="success">{activeChatCount} Live Chats</Badge>
+            {widgetConfig.enabled && <Badge tone="success">{activeChatCount} Live Chats</Badge>}
           </div>
         </Banner>
 
@@ -248,22 +273,92 @@ export default function Index() {
               <Tabs tabs={tabs} selected={selectedTab} onSelect={handleTabChange}>
                 <Box padding="500">
                   {selectedTab === 0 && (
-                    <BlockStack gap="400">
+                    <BlockStack gap="500">
                       <InlineStack align="space-between">
-                        <Text variant="headingMd" as="h3">AI Character Appearance</Text>
+                        <Text variant="headingMd" as="h3">Character & Avatar Selection</Text>
                         <Button variant="primary" onClick={handleSaveCharacter} loading={isSaving && fetcher.formData?.get("intent") === "saveCharacter"}>Save Changes</Button>
                       </InlineStack>
 
+                      <BlockStack gap="200">
+                        <Text variant="bodyMd" fontWeight="bold" as="p">Choose Avatar Type</Text>
+                        <InlineStack gap="300">
+                          <Button pressed={avatarType === 'preset'} onClick={() => setAvatarType('preset')}>Presets</Button>
+                          <Button pressed={avatarType === 'custom'} onClick={() => setAvatarType('custom')}>Custom (URL/Logo)</Button>
+                          <Button pressed={avatarType === 'svg'} onClick={() => setAvatarType('svg')}>Custom (SVG Code)</Button>
+                        </InlineStack>
+                      </BlockStack>
+
+                      {avatarType === 'preset' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+                          {characterPresets.map((p) => (
+                            <div
+                              key={p.id}
+                              onClick={() => setAvatarId(p.id)}
+                              style={{
+                                cursor: 'pointer',
+                                border: avatarId === p.id ? `2px solid ${p.color}` : '1px solid #e1e3e5',
+                                borderRadius: '12px',
+                                padding: '16px',
+                                textAlign: 'center',
+                                backgroundColor: avatarId === p.id ? `${p.color}08` : 'white',
+                                transition: 'all 0.2s'
+                              }}
+                            >
+                              <div style={{
+                                width: '60px',
+                                height: '60px',
+                                margin: '0 auto 12px',
+                                borderRadius: '50%',
+                                backgroundColor: p.color,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'white'
+                              }}>
+                                <Icon source={PersonIcon} />
+                              </div>
+                              <Text variant="bodyMd" fontWeight="bold" as="p">{p.name}</Text>
+                              <Text variant="bodyXs" tone="subdued" as="p">{p.desc}</Text>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {avatarType === 'custom' && (
+                        <TextField
+                          label="Avatar Image URL"
+                          value={avatarUrl}
+                          onChange={setAvatarUrl}
+                          placeholder="https://example.com/logo.png"
+                          autoComplete="off"
+                          helpText="Use a direct link to an image (PNG/JPG)."
+                        />
+                      )}
+
+                      {avatarType === 'svg' && (
+                        <TextField
+                          label="Custom SVG Code"
+                          value={avatarSvg}
+                          onChange={setAvatarSvg}
+                          multiline={4}
+                          placeholder="<svg>...</svg>"
+                          autoComplete="off"
+                          helpText="Paste raw SVG code here. It will be rendered as the assistant avatar."
+                        />
+                      )}
+
                       <FormLayout>
-                        <TextField label="Assistant Name" value={charName} onChange={setCharName} autoComplete="off" />
-                        <TextField label="Assistant Role / Title" value={charRole} onChange={setCharRole} placeholder="e.g. Shopping Assistant" autoComplete="off" />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                          <TextField label="Assistant Name" value={charName} onChange={setCharName} autoComplete="off" />
+                          <TextField label="Role Title" value={charRole} onChange={setCharRole} placeholder="e.g. Shopping Assistant" autoComplete="off" />
+                        </div>
                         <TextField label="Welcome Message" value={charWelcome} onChange={setCharWelcome} multiline={2} autoComplete="off" />
                         <TextField
                           label="Detailed Instructions for AI"
                           value={charInstructions}
                           onChange={setCharInstructions}
                           multiline={6}
-                          helpText="Give specific instructions on how the AI should behave, what tone to use, and what information to prioritize."
+                          helpText="Explain how the AI should behave."
                           autoComplete="off"
                         />
                       </FormLayout>
@@ -405,7 +500,13 @@ export default function Index() {
                     <div style={{ height: '350px', display: 'flex', flexDirection: 'column' }}>
                       <div style={{ backgroundColor: primaryColor, padding: '16px', color: 'white', display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Icon source={PersonIcon} />
+                          {avatarType === 'svg' && avatarSvg ? (
+                            <div dangerouslySetInnerHTML={{ __html: avatarSvg }} style={{ width: '24px', height: '24px' }} />
+                          ) : avatarType === 'custom' && avatarUrl ? (
+                            <img src={avatarUrl} style={{ width: '36px', height: '36px', borderRadius: '50%', objectFit: 'cover' }} />
+                          ) : (
+                            <Icon source={PersonIcon} />
+                          )}
                         </div>
                         <BlockStack gap="0">
                           <Text variant="bodyMd" fontWeight="bold" as="p" tone="inherit">{charName}</Text>
@@ -565,7 +666,13 @@ export default function Index() {
               <div style={{ height: '550px', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ backgroundColor: primaryColor, padding: '20px', color: 'white', display: 'flex', alignItems: 'center', gap: '15px' }}>
                   <div style={{ width: '45px', height: '45px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon source={PersonIcon} />
+                    {avatarType === 'svg' && avatarSvg ? (
+                      <div dangerouslySetInnerHTML={{ __html: avatarSvg }} style={{ width: '30px', height: '30px' }} />
+                    ) : avatarType === 'custom' && avatarUrl ? (
+                      <img src={avatarUrl} style={{ width: '45px', height: '45px', borderRadius: '50%', objectFit: 'cover' }} />
+                    ) : (
+                      <Icon source={PersonIcon} />
+                    )}
                   </div>
                   <BlockStack gap="0">
                     <Text variant="headingMd" as="h3" tone="inherit">{charName}</Text>

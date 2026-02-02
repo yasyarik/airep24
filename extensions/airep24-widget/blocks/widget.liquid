@@ -1,0 +1,57 @@
+{% schema %}
+{
+  "name": "AiRep24 Widget",
+  "target": "body",
+  "settings": []
+}
+{% endschema %}
+
+<div id="airep24-root"></div>
+
+<script>
+  (function() {
+    const shop = "{{ shop.permanent_domain }}";
+    const apiUrl = "https://app.airep24.com/api/widget-config?shop=" + shop;
+
+    fetch(apiUrl)
+      .then(res => res.json())
+      .then(data => {
+        if (data.enabled) {
+          console.log("AiRep24: Initializing widget for", shop);
+          initAiRep24Widget(data);
+        } else {
+          console.log("AiRep24: Widget is disabled for this shop.");
+        }
+      })
+      .catch(err => console.error("AiRep24 Error:", err));
+
+    function initAiRep24Widget(data) {
+      // Здесь будет логика рендеринга виджета (React или Vanilla JS)
+      // Для примера просто создаем кнопку по настройкам
+      const root = document.getElementById('airep24-root');
+      const config = data.config;
+      const char = data.character;
+
+      const widget = document.createElement('div');
+      widget.id = 'airep24-widget-container';
+      widget.style.position = 'fixed';
+      widget.style.bottom = '20px';
+      widget.style[config.position.split('-')[1]] = '20px';
+      widget.style.zIndex = '999999';
+
+      const button = document.createElement('button');
+      button.style.backgroundColor = config.primaryColor;
+      button.style.color = 'white';
+      button.style.border = 'none';
+      button.style.borderRadius = config.borderRadius + 'px';
+      button.style.padding = '12px 20px';
+      button.style.cursor = 'pointer';
+      button.style.boxShadow = config.shadow ? '0 4px 12px rgba(0,0,0,0.15)' : 'none';
+      button.style.opacity = config.opacity / 100;
+      button.innerHTML = 'Chat with ' + char.name;
+
+      widget.appendChild(button);
+      root.appendChild(widget);
+    }
+  })();
+</script>
