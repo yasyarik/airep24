@@ -193,6 +193,10 @@ export const action = async ({ request }) => {
       const name = formData.get("name");
       const role = formData.get("role");
       const tone = formData.get("tone");
+      const initiative = formData.get("initiative");
+      const verbosity = formData.get("verbosity");
+      const style = formData.get("style");
+      const ethics = formData.get("ethics");
       const welcomeMessage = formData.get("welcomeMessage");
       const instructions = formData.get("instructions");
       const avatarType = formData.get("avatarType");
@@ -202,7 +206,9 @@ export const action = async ({ request }) => {
       await prisma.characterProfile.update({
         where: { id },
         data: {
-          name, role, tone, welcomeMessage, instructions,
+          name, role, tone,
+          initiative, verbosity, style, ethics,
+          welcomeMessage, instructions,
           avatarType, avatarId,
           animationConfig
         }
@@ -297,6 +303,10 @@ export default function Index() {
   const [pName, setPName] = useState("");
   const [pRole, setPRole] = useState("");
   const [pTone, setPTone] = useState("friendly");
+  const [pInitiative, setPInitiative] = useState("high");
+  const [pVerbosity, setPVerbosity] = useState("short");
+  const [pStyle, setPStyle] = useState("benefit");
+  const [pEthics, setPEthics] = useState("advisor");
   const [pWelcome, setPWelcome] = useState("");
   const [pInstructions, setPInstructions] = useState("");
   const [pAvatarType, setPAvatarType] = useState("preset");
@@ -333,6 +343,10 @@ export default function Index() {
       setPName(currentProfile.name);
       setPRole(currentProfile.role);
       setPTone(currentProfile.tone || "friendly");
+      setPInitiative(currentProfile.initiative || "high");
+      setPVerbosity(currentProfile.verbosity || "short");
+      setPStyle(currentProfile.style || "benefit");
+      setPEthics(currentProfile.ethics || "advisor");
       setPWelcome(currentProfile.welcomeMessage);
       setPInstructions(currentProfile.instructions);
       setPAvatarType(currentProfile.avatarType);
@@ -359,6 +373,10 @@ export default function Index() {
         name: pName,
         role: pRole,
         tone: pTone,
+        initiative: pInitiative,
+        verbosity: pVerbosity,
+        style: pStyle,
+        ethics: pEthics,
         welcomeMessage: pWelcome,
         instructions: pInstructions,
         avatarType: pAvatarType,
@@ -522,6 +540,63 @@ export default function Index() {
                               <TextField label="Role" value={pRole} onChange={setPRole} autoComplete="off" />
                             </FormLayout.Group>
                             <Select label="Communication Tone" options={[{ label: 'Friendly (Default)', value: 'friendly' }, { label: 'Professional (Corporate)', value: 'professional' }, { label: 'Playful (Fun)', value: 'playful' }, { label: 'Sophisticated (Luxury)', value: 'sophisticated' }, { label: 'Empathetic (Support)', value: 'empathetic' }]} value={pTone} onChange={setPTone} />
+
+                            <Card title="Personality Engine (The Soul)" sectioned>
+                              <BlockStack gap="400">
+                                <Text tone="subdued">Define how your AI thinks and sells.</Text>
+                                <InlineStack gap="400" align="start">
+                                  <div style={{ flex: 1 }}>
+                                    <Select
+                                      label="Initiative Level"
+                                      options={[
+                                        { label: 'Proactive (Active Consultant)', value: 'high' },
+                                        { label: 'Reactive (Librarian)', value: 'low' }
+                                      ]}
+                                      value={pInitiative}
+                                      onChange={setPInitiative}
+                                      helpText={pInitiative === 'high' ? "Ends answers with follow-up questions." : "Only answers what is asked."}
+                                    />
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <Select
+                                      label="Response Length"
+                                      options={[
+                                        { label: 'Brief (Mobile First)', value: 'short' },
+                                        { label: 'Balanced (Standard)', value: 'balanced' }
+                                      ]}
+                                      value={pVerbosity}
+                                      onChange={setPVerbosity}
+                                      helpText="Brief keeps replies under 3 sentences."
+                                    />
+                                  </div>
+                                </InlineStack>
+                                <InlineStack gap="400" align="start">
+                                  <div style={{ flex: 1 }}>
+                                    <Select
+                                      label="Selling Focus"
+                                      options={[
+                                        { label: 'Benefit-Driven (Emotional)', value: 'benefit' },
+                                        { label: 'Tech-Heavy (Specs)', value: 'tech' }
+                                      ]}
+                                      value={pStyle}
+                                      onChange={setPStyle}
+                                    />
+                                  </div>
+                                  <div style={{ flex: 1 }}>
+                                    <Select
+                                      label="Ethics & Closing"
+                                      options={[
+                                        { label: 'Trusted Advisor (Honest)', value: 'advisor' },
+                                        { label: 'Salesman (Closing Focus)', value: 'sales' }
+                                      ]}
+                                      value={pEthics}
+                                      onChange={setPEthics}
+                                      helpText={pEthics === 'sales' ? "Uses FOMO & Social Proof to close." : "Prioritizes customer trust over quick sale."}
+                                    />
+                                  </div>
+                                </InlineStack>
+                              </BlockStack>
+                            </Card>
 
                             {/* Avatar Config Section */}
                             <Card title="Avatar Configuration" sectioned>
