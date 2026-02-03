@@ -97,6 +97,16 @@ export async function indexStoreData(admin, shopDomain, prisma) {
             }
           }
         }
+        orders(first: 50) {
+          nodes {
+            id
+            name
+            totalPriceSet { presentmentMoney { amount currencyCode } }
+            lineItems(first: 5) {
+              nodes { title quantity }
+            }
+          }
+        }
       }`
     );
 
@@ -108,10 +118,41 @@ export async function indexStoreData(admin, shopDomain, prisma) {
       throw new Error("Failed to fetch store data");
     }
 
-    const { shop, products, collections, articles, pages, priceRules, metaobjects, deliveryProfiles } = data;
+    const { shop, products, collections, articles, pages, priceRules, metaobjects, deliveryProfiles, orders } = data;
 
     // --- PREPARE ITEMS ---
     const itemsToCreate = [];
+
+    // Theme Sections Extraction
+    try {
+      const session = { shop: shopDomain };
+      const ThemeResource = admin.rest.resources.Theme;
+      const themes = await ThemeResource.all({ session });
+      const themesData = themes.data || (Array.isArray(themes) ? themes : []);
+      const mainTheme = themesData.find(t => t.role === 'main');
+
+      if (mainTheme) {
+        const AssetResource = admin.rest.resources.Asset;
+        const assetResponse = await AssetResource.all({ session, theme_id: mainTheme.id });
+        const assetList = assetResponse.data || (Array.isArray(assetResponse) ? assetResponse : []);
+
+        const templateAssets = assetList.filter(a => a.key.startsWith('templates/') && a.key.endsWith('.json'));
+
+        for (const assetRef of templateAssets.slice(0, 10)) {
+          const asset = await AssetResource.find({ theme_id: mainTheme.id, asset: { key: assetRef.key } });
+          if (asset && asset.value) {
+            itemsToCreate.push({
+              shopDomain,
+              type: 'theme_section',
+              title: `Theme: ${assetRef.key}`,
+              content: `Front-end Section Data (${assetRef.key}): ${asset.value.substring(0, 5000)}`
+            });
+          }
+        }
+      }
+    } catch (e) {
+      console.log("[INDEXER] Could not index theme sections:", e.message);
+    }
 
     // Shop Metadata
     itemsToCreate.push({
@@ -242,6 +283,18 @@ export async function indexStoreData(admin, shopDomain, prisma) {
       });
     });
 
+    // Orders
+    orders.nodes.forEach(o => {
+      const itemsStr = o.lineItems.nodes.map(li => `${li.quantity}x ${li.title}`).join(', ');
+      itemsToCreate.push({
+        shopDomain,
+        type: 'order',
+        externalId: o.id,
+        title: `Order ${o.name}`,
+        content: `Order: ${o.name}. Total: ${o.totalPriceSet.presentmentMoney.amount} ${o.totalPriceSet.presentmentMoney.currencyCode}. Items: ${itemsStr}`
+      });
+    });
+
     // --- SAVE TO DATABASE ---
     await prisma.knowledgeItem.deleteMany({ where: { shopDomain } });
 
@@ -264,6 +317,8 @@ export async function indexStoreData(admin, shopDomain, prisma) {
         pages: pages.nodes.length,
         policies: itemsToCreate.filter(i => i.type === 'policy' || i.type === 'shipping_info' || i.type === 'payment_info').length,
         discounts: priceRules.nodes.length,
+        orders: orders.nodes.length,
+        themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
         lastIndexed: new Date()
       },
       update: {
@@ -273,6 +328,8 @@ export async function indexStoreData(admin, shopDomain, prisma) {
         pages: pages.nodes.length,
         policies: itemsToCreate.filter(i => i.type === 'policy' || i.type === 'shipping_info' || i.type === 'payment_info').length,
         discounts: priceRules.nodes.length,
+        orders: orders.nodes.length,
+        themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
         lastIndexed: new Date()
       }
     });

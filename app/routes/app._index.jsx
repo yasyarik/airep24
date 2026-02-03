@@ -133,7 +133,7 @@ export const loader = async ({ request }) => {
 
     // 4. Stats & Widget Config
     let dbStats = await prisma.storeStats.findUnique({ where: { shopDomain: session.shop } });
-    const stats = dbStats ? { ...dbStats, lastIndexed: dbStats.lastIndexed?.toISOString() } : { products: 0, collections: 0, discounts: 0, articles: 0, pages: 0, policies: 4, autoSync: true, lastIndexed: null };
+    const stats = dbStats ? { ...dbStats, lastIndexed: dbStats.lastIndexed?.toISOString() } : { products: 0, collections: 0, discounts: 0, articles: 0, pages: 0, policies: 4, orders: 0, themeSections: 0, autoSync: true, lastIndexed: null };
 
     let widgetConfig = await prisma.widgetConfig.findUnique({ where: { shopDomain: session.shop } });
     if (!widgetConfig) widgetConfig = await prisma.widgetConfig.create({ data: { shopDomain: session.shop } });
@@ -142,19 +142,19 @@ export const loader = async ({ request }) => {
     // 5. Check True Theme Status (App Embed)
     let themeEnabled = false;
     try {
-      const themes = await Theme.all({ session });
-      const themesData = themes.data || (Array.isArray(themes) ? themes : []);
-      const mainTheme = themesData.find(t => t.role === 'main');
+      const themesRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes.json`, {
+        headers: { "X-Shopify-Access-Token": session.accessToken }
+      });
+      const themesData = await themesRes.json();
+      const themes = themesData.themes || [];
+      const mainTheme = themes.find(t => t.role === 'main');
 
       if (mainTheme) {
-        const assetResponse = await Asset.all({
-          session,
-          theme_id: mainTheme.id,
-          asset: { key: 'config/settings_data.json' }
+        const assetRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes/${mainTheme.id}/assets.json?asset[key]=config/settings_data.json`, {
+          headers: { "X-Shopify-Access-Token": session.accessToken }
         });
-
-        const assets = assetResponse.data || (Array.isArray(assetResponse) ? assetResponse : []);
-        const settingsAsset = assets[0];
+        const assetData = await assetRes.json();
+        const settingsAsset = assetData.asset;
 
         if (settingsAsset && settingsAsset.value) {
           const json = JSON.parse(settingsAsset.value);
@@ -524,14 +524,14 @@ export default function Index() {
               </Box>
               <Box padding="200" background="bg-surface-secondary" borderRadius="200">
                 <BlockStack align="center" gap="100">
-                  <Text variant="headingLg" as="p">Enabled</Text>
-                  <Text variant="bodySm" tone="subdued">Metaobjects</Text>
+                  <Text variant="headingLg" as="p">{stats.orders || 0}</Text>
+                  <Text variant="bodySm" tone="subdued">Orders</Text>
                 </BlockStack>
               </Box>
               <Box padding="200" background="bg-surface-secondary" borderRadius="200">
                 <BlockStack align="center" gap="100">
-                  <Text variant="headingLg" as="p">Enabled</Text>
-                  <Text variant="bodySm" tone="subdued">Metafields</Text>
+                  <Text variant="headingLg" as="p">{discoveredPresets.length > 0 ? "Enabled" : "Active"}</Text>
+                  <Text variant="bodySm" tone="subdued">Theme Layout</Text>
                 </BlockStack>
               </Box>
             </InlineGrid>
