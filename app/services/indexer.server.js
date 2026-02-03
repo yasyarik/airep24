@@ -14,7 +14,7 @@ export async function indexStoreData(admin, session, prisma) {
       query getFullStoreData {
         shop {
           name
-          url
+          myshopifyDomain
           currencyCode
         }
         products(first: 50) {
@@ -63,14 +63,16 @@ export async function indexStoreData(admin, session, prisma) {
     );
 
     const responseJson = await fullDataRes.json();
+    console.log(`[INDEXER] Raw response keys: ${Object.keys(responseJson)}`);
     const data = responseJson.data;
 
     if (!data) {
-      console.error("[INDEXER] GraphQL Error:", responseJson.errors);
-      throw new Error("Failed to fetch store data");
+      console.error("[INDEXER] GraphQL Error - No Data. Errors:", JSON.stringify(responseJson.errors));
+      return { success: false, error: "Shopify API returned no data" };
     }
 
     const { shop, products, collections, articles, pages, orders } = data;
+    console.log(`[INDEXER] Fetched: ${products?.nodes?.length || 0} products, ${collections?.nodes?.length || 0} collections, ${orders?.nodes?.length || 0} orders`);
 
     // --- PREPARE ITEMS ---
     const itemsToCreate = [];
@@ -149,11 +151,12 @@ export async function indexStoreData(admin, session, prisma) {
 
     // Shop Metadata
     if (shop) {
+      console.log(`[INDEXER] Adding shop metadata...`);
       itemsToCreate.push({
         shopDomain,
         type: 'shop_metadata',
         title: 'General Store Info',
-        content: `Store Name: ${shop.name}. URL: ${shop.url}. Currency: ${shop.currencyCode}.`
+        content: `Store Name: ${shop.name}. Domain: ${shop.myshopifyDomain}. Currency: ${shop.currencyCode}.`
       });
     }
 
