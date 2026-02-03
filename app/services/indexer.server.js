@@ -80,7 +80,7 @@ export async function indexStoreData(admin, session, prisma) {
       throw new Error("Failed to fetch store data");
     }
 
-    const { shop, products, collections, articles, pages, priceRules, metaobjects, deliveryProfiles, orders } = data;
+    const { shop, products, collections, articles, pages, orders } = data;
 
     // --- PREPARE ITEMS ---
     const itemsToCreate = [];

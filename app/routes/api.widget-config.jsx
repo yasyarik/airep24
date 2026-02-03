@@ -41,7 +41,7 @@ export const loader = async ({ request }) => {
         console.error("Failed to parse animation config", e);
     }
 
-    return {
+    const responseData = {
         enabled: widgetConfig.enabled,
         config: {
             primaryColor: widgetConfig.primaryColor,
@@ -63,4 +63,26 @@ export const loader = async ({ request }) => {
             welcomeMessage: welcomeMessage
         }
     };
+
+    return new Response(JSON.stringify(responseData), {
+        headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type"
+        }
+    });
 };
+
+export async function action({ request }) {
+    if (request.method === "OPTIONS") {
+        return new Response(null, {
+            headers: {
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type"
+            }
+        });
+    }
+    return null;
+}
