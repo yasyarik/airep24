@@ -153,12 +153,14 @@ export const loader = async ({ request }) => {
     // 5. Check True Theme Status (App Embed)
     let themeEnabled = false;
     try {
+      console.log(`[THEME CHECK] Fetching themes for ${session.shop} with token ${session.accessToken ? session.accessToken.substring(0, 10) + '...' : 'MISSING'}`);
       const themesRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes.json`, {
         headers: { "X-Shopify-Access-Token": session.accessToken }
       });
       const themesData = await themesRes.json();
-      console.log("[THEME CHECK] Themes found:", themesData.themes?.length || 0);
+      console.log("[THEME CHECK] API Response:", JSON.stringify(themesData).substring(0, 200));
       const themes = themesData.themes || [];
+      console.log("[THEME CHECK] Themes found count:", themes.length);
       const mainTheme = themes.find(t => t.role === 'main');
 
       if (mainTheme) {

@@ -121,6 +121,8 @@ export async function indexStoreData(admin, session, prisma) {
 
     const { shop, products, collections, articles, pages, priceRules, metaobjects, deliveryProfiles, orders } = data;
 
+    console.log(`[INDEXER] Fetched: ${products?.nodes?.length || 0} products, ${collections?.nodes?.length || 0} collections, ${articles?.nodes?.length || 0} articles, ${pages?.nodes?.length || 0} pages, ${orders?.nodes?.length || 0} orders`);
+
     // --- PREPARE ITEMS ---
     const itemsToCreate = [];
 
