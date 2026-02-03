@@ -128,19 +128,23 @@ export async function indexStoreData(admin, session, prisma) {
 
     // Theme Sections Extraction
     try {
+      console.log(`[INDEXER] Fetching themes for ${shopDomain}...`);
       const themesRes = await fetch(`https://${shopDomain}/admin/api/2025-10/themes.json`, {
         headers: { "X-Shopify-Access-Token": session.accessToken }
       });
       const themesData = await themesRes.json();
       const themes = themesData.themes || [];
       const mainTheme = themes.find(t => t.role === 'main');
+      console.log(`[INDEXER] Main theme found: ${mainTheme?.name || 'NONE'}`);
 
       if (mainTheme) {
+        console.log(`[INDEXER] Fetching assets for theme ${mainTheme.id}...`);
         const assetsRes = await fetch(`https://${shopDomain}/admin/api/2025-10/themes/${mainTheme.id}/assets.json`, {
           headers: { "X-Shopify-Access-Token": session.accessToken }
         });
         const assetsData = await assetsRes.json();
         const assetList = assetsData.assets || [];
+        console.log(`[INDEXER] Found ${assetList.length} assets`);
 
         const templateAssets = assetList.filter(a => a.key.startsWith('templates/') && a.key.endsWith('.json'));
 

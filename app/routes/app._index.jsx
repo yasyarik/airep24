@@ -150,21 +150,31 @@ export const loader = async ({ request }) => {
     if (!widgetConfig) widgetConfig = await prisma.widgetConfig.create({ data: { shopDomain: session.shop } });
     const activeChatCount = await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } });
 
-    // 5. Check True Theme Status (App Embed)
+    // 5. Check True Theme Status (App Embed) via GraphQL
     let themeEnabled = false;
     try {
-      console.log(`[THEME CHECK] Fetching themes for ${session.shop} with token ${session.accessToken ? session.accessToken.substring(0, 10) + '...' : 'MISSING'}`);
-      const themesRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes.json`, {
-        headers: { "X-Shopify-Access-Token": session.accessToken }
-      });
-      const themesData = await themesRes.json();
-      console.log("[THEME CHECK] API Response:", JSON.stringify(themesData).substring(0, 200));
-      const themes = themesData.themes || [];
-      console.log("[THEME CHECK] Themes found count:", themes.length);
-      const mainTheme = themes.find(t => t.role === 'main');
+      const themesResponse = await admin.graphql(
+        `#graphql
+        query getThemes {
+          themes(role: MAIN, first: 1) {
+            nodes {
+              id
+              name
+              role
+            }
+          }
+        }`
+      );
+      const themesData = await themesResponse.json();
+      console.log("[THEME CHECK] GraphQL Response:", JSON.stringify(themesData));
+
+      const mainTheme = themesData.data?.themes?.nodes?.[0];
 
       if (mainTheme) {
-        const assetRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes/${mainTheme.id}/assets.json?asset[key]=config/settings_data.json`, {
+        // Assets still require REST or a very specific GraphQL mutation/query for some fields.
+        // Let's try direct fetch for config/settings_data.json but with better error handling.
+        const themeId = mainTheme.id.split('/').pop();
+        const assetRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes/${themeId}/assets.json?asset[key]=config/settings_data.json`, {
           headers: { "X-Shopify-Access-Token": session.accessToken }
         });
         const assetData = await assetRes.json();
@@ -173,17 +183,17 @@ export const loader = async ({ request }) => {
         if (settingsAsset && settingsAsset.value) {
           const json = JSON.parse(settingsAsset.value);
           const blocks = json.current?.blocks || {};
-          console.log("[THEME CHECK] Blocks count:", Object.keys(blocks).length);
           themeEnabled = Object.values(blocks).some(block =>
             block.type?.includes('airep24-widget') && !block.disabled
           );
-          if (!themeEnabled) {
-            console.log("[THEME CHECK] Block 'airep24-widget' not found in settings_data.json among active blocks");
-          }
+        } else {
+          console.log("[THEME CHECK] settings_data.json not found or empty:", assetData);
         }
+      } else {
+        console.log("[THEME CHECK] No main theme found via GraphQL");
       }
     } catch (e) {
-      console.warn("Theme check failed:", e.message);
+      console.warn("[THEME CHECK] Failed:", e.message);
     }
 
     return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled };
