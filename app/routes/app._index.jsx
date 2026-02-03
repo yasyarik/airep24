@@ -197,7 +197,13 @@ export const loader = async ({ request }) => {
         console.log("[THEME CHECK] No main theme found via GraphQL");
       }
     } catch (e) {
-      console.warn("[THEME CHECK] Failed:", e.message);
+      if (e instanceof Response) throw e;
+      const errMsg = e.message || "";
+      if (errMsg.toLowerCase().includes('access denied') || errMsg.toLowerCase().includes('scope')) {
+        console.log("[LOADER] Access denied detected. Forcing re-auth...");
+        throw await authenticate.admin(request);
+      }
+      console.warn("[THEME CHECK] Failed:", errMsg);
     }
 
     return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled };
@@ -309,6 +315,10 @@ export const action = async ({ request }) => {
     if (intent === "index") {
       console.log("[DASHBOARD] Starting user-triggered sync");
       const result = await indexStoreData(admin, session, prisma);
+      if (!result.success && (result.error?.includes('Access denied') || result.error?.includes('scope'))) {
+        console.log("[ACTION] Access denied during sync. Forcing re-auth...");
+        throw await authenticate.admin(request);
+      }
       return { success: result.success, indexResult: result };
     }
 
