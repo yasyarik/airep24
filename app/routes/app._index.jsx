@@ -88,21 +88,15 @@ export const loader = async ({ request }) => {
     for (const p of discoveredPresets) {
       const existing = profiles.find(pr => pr.avatarId === p.id && pr.avatarType === 'preset');
       if (!existing) {
-        // Construct a default animation config for the preset based on found files
-        // Assume all found files are for "idle" state for now
-        // In reality, presets might have complex logic, but for now we just register them.
-        // We do NOT create assets for presets in DB to avoid duplication. Widget loads them from assets folder.
         const animationConfig = {
           idle: { frames: p.frames, speed: 500 },
-          greeting: { frames: p.frames, speed: 500 } // fallback
+          greeting: { frames: p.frames, speed: 500 }
         };
-
         const newP = await prisma.characterProfile.create({
           data: {
             shopDomain: session.shop,
             name: p.name,
-            isPreset: true,
-            isActive: profiles.length === 0, // Only active if it's the first one
+            isActive: profiles.length === 0,
             avatarType: 'preset',
             avatarId: p.id,
             role: "Shopping Assistant",
@@ -114,15 +108,13 @@ export const loader = async ({ request }) => {
       }
     }
 
-    // B. Remove orphaned presets (exist in DB but file deleted)
+    // B. Remove orphaned presets
     const validPresetIds = discoveredPresets.map(d => d.id);
     const orphans = profiles.filter(p => p.avatarType === 'preset' && !validPresetIds.includes(p.avatarId));
 
     for (const orphan of orphans) {
       await prisma.characterProfile.delete({ where: { id: orphan.id } });
     }
-
-    // Filter profiles list for UI
     profiles = profiles.filter(p => !(p.avatarType === 'preset' && !validPresetIds.includes(p.avatarId)));
 
     // C. Ensure at least one profile is active
@@ -133,14 +125,10 @@ export const loader = async ({ request }) => {
         data: { isActive: true }
       });
       profiles[0].isActive = true;
-      activeProfile = profiles[0];
     }
 
-    // Mark presets in memory
-    profiles = profiles.map(p => ({
-      ...p,
-      isPreset: p.avatarType === 'preset'
-    }));
+    // Mark presets
+    profiles = profiles.map(p => ({ ...p, isPreset: p.avatarType === 'preset' }));
 
     // 4. Stats & Widget Config
     let dbStats = await prisma.storeStats.findUnique({ where: { shopDomain: session.shop } });
@@ -171,8 +159,14 @@ export const loader = async ({ request }) => {
           const json = JSON.parse(settingsAsset.value);
           const blocks = json.current?.blocks || {};
           themeEnabled = Object.values(blocks).some(block =>
-            block.type?.includes('airep24-widget') && !block.disabled
+            (block.type?.includes('airep24-widget') || block.type?.includes('airep24')) && !block.disabled
           );
+
+          if (!themeEnabled) {
+            console.log("[THEME CHECK] Widget not found in blocks. Types:",
+              Object.values(blocks).map(b => b.type).filter(Boolean).join(', ')
+            );
+          }
         }
       }
     } catch (e) {

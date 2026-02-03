@@ -14,18 +14,8 @@ export async function indexStoreData(admin, session, prisma) {
       query getFullStoreData {
         shop {
           name
-          description
-          contactEmail
-          primaryDomain { url }
+          url
           currencyCode
-          shipsToCountries
-          metafields(first: 20) {
-            nodes { key value namespace }
-          }
-          privacyPolicy { body title }
-          refundPolicy { body title }
-          shippingPolicy { body title }
-          termsOfService { body title }
         }
         products(first: 50) {
           nodes {
@@ -104,6 +94,38 @@ export async function indexStoreData(admin, session, prisma) {
 
         const templateAssets = assetList.filter(a => a.key.startsWith('templates/') && a.key.endsWith('.json'));
 
+        // Check for theme app extension enablement
+        const settingsAssetRef = assetList.find(a => a.key === 'config/settings_data.json');
+        let themeEnabled = false;
+        if (settingsAssetRef) {
+          const settingsAssetRes = await fetch(`https://${shopDomain}/admin/api/2025-10/themes/${mainTheme.id}/assets.json?asset[key]=${settingsAssetRef.key}`, {
+            headers: { "X-Shopify-Access-Token": session.accessToken }
+          });
+          const singleSettingsAssetData = await settingsAssetRes.json();
+          const settingsAsset = singleSettingsAssetData.asset;
+
+          if (settingsAsset && settingsAsset.value) {
+            try {
+              const json = JSON.parse(settingsAsset.value);
+              const blocks = json.current?.blocks || {};
+              themeEnabled = Object.values(blocks).some(block =>
+                (block.type?.includes('airep24-widget') || block.type?.includes('airep24')) && !block.disabled
+              );
+
+              if (!themeEnabled) {
+                console.log("[THEME CHECK] Widget not found in blocks. Available block types:",
+                  Object.values(blocks).map(b => b.type).filter(Boolean).join(', ')
+                );
+              }
+            } catch (parseError) {
+              console.log("[THEME CHECK] Error parsing settings_data.json:", parseError.message);
+            }
+          }
+        } else {
+          console.log("[THEME CHECK] config/settings_data.json not found.");
+        }
+
+
         for (const assetRef of templateAssets.slice(0, 5)) {
           const assetRes = await fetch(`https://${shopDomain}/admin/api/2025-10/themes/${mainTheme.id}/assets.json?asset[key]=${assetRef.key}`, {
             headers: { "X-Shopify-Access-Token": session.accessToken }
@@ -131,49 +153,10 @@ export async function indexStoreData(admin, session, prisma) {
         shopDomain,
         type: 'shop_metadata',
         title: 'General Store Info',
-        content: `Store Name: ${shop.name}. Description: ${shop.description}. Contact: ${shop.contactEmail}. Domain: ${shop.primaryDomain?.url}. Currency: ${shop.currencyCode}. Ships to: ${shop.shipsToCountries?.join(', ')}.`
-      });
-
-      const policies = [
-        { t: 'Privacy Policy', p: shop.privacyPolicy },
-        { t: 'Refund Policy', p: shop.refundPolicy },
-        { t: 'Shipping Policy', p: shop.shippingPolicy },
-        { t: 'Terms of Service', p: shop.termsOfService }
-      ];
-      policies.forEach(pol => {
-        if (pol.p) {
-          itemsToCreate.push({
-            shopDomain,
-            type: 'policy',
-            title: pol.t,
-            content: `Policy: ${pol.t}. Body: ${pol.p.body.replace(/<[^>]*>/g, '')}`
-          });
-        }
-      });
-
-      if (shop.metafields) {
-        shop.metafields.nodes.forEach(mf => {
-          itemsToCreate.push({
-            shopDomain,
-            type: 'metafield',
-            title: `Shop Metafield: ${mf.namespace}.${mf.key}`,
-            content: `Store Setting (${mf.namespace}.${mf.key}): ${mf.value}`
-          });
-        });
-      }
-    }
-
-    // Shipping Methods
-    if (deliveryProfiles) {
-      deliveryProfiles.nodes.forEach(profile => {
-        itemsToCreate.push({
-          shopDomain,
-          type: 'shipping_info',
-          title: `Shipping Profile: ${profile.name}`,
-          content: `Standard Shipping Profile: ${profile.name}`
-        });
+        content: `Store Name: ${shop.name}. URL: ${shop.url}. Currency: ${shop.currencyCode}.`
       });
     }
+
 
     // Products
     if (products) {
@@ -227,35 +210,6 @@ export async function indexStoreData(admin, session, prisma) {
       });
     }
 
-    // Discounts
-    if (priceRules) {
-      priceRules.nodes.forEach(d => {
-        let valueStr = "";
-        if (d.valueV2?.__typename === 'PriceRulePercentValue') valueStr = `${d.valueV2.percentage}% off`;
-        else if (d.valueV2?.__typename === 'PriceRuleFixedAmountValue') valueStr = `${d.valueV2.amount?.amount} ${d.valueV2.amount?.currencyCode} off`;
-
-        itemsToCreate.push({
-          shopDomain,
-          type: 'discount',
-          externalId: d.id,
-          title: d.title,
-          content: `Discount/Promo: ${d.title}. Value: ${valueStr}`
-        });
-      });
-    }
-
-    // Metaobjects
-    if (metaobjects) {
-      metaobjects.nodes.forEach(mo => {
-        const fieldsStr = mo.fields.map(f => `${f.key}: ${f.value}`).join('. ');
-        itemsToCreate.push({
-          shopDomain,
-          type: 'metaobject',
-          title: `${mo.type} - ${mo.handle}`,
-          content: `Custom Data (${mo.type}): ${fieldsStr}`
-        });
-      });
-    }
 
     // Orders
     if (orders) {
@@ -292,7 +246,7 @@ export async function indexStoreData(admin, session, prisma) {
         articles: articles?.nodes?.length || 0,
         pages: pages?.nodes?.length || 0,
         policies: itemsToCreate.filter(i => i.type === 'policy' || i.type === 'shipping_info' || i.type === 'payment_info').length,
-        discounts: priceRules?.nodes?.length || 0,
+        discounts: 0,
         orders: orders?.nodes?.length || 0,
         themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
         lastIndexed: new Date()
@@ -303,7 +257,7 @@ export async function indexStoreData(admin, session, prisma) {
         articles: articles?.nodes?.length || 0,
         pages: pages?.nodes?.length || 0,
         policies: itemsToCreate.filter(i => i.type === 'policy' || i.type === 'shipping_info' || i.type === 'payment_info').length,
-        discounts: priceRules?.nodes?.length || 0,
+        discounts: 0,
         orders: orders?.nodes?.length || 0,
         themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
         lastIndexed: new Date()
