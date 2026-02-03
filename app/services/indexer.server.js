@@ -68,34 +68,21 @@ export async function indexStoreData(admin, session, prisma) {
             id
             title
             valueV2 {
-              ... on PricingValuePercentage { percentage }
-              ... on MoneyV2 { amount currencyCode }
+              ... on PriceRulePercentValue { percentage }
+              ... on PriceRuleFixedAmountValue { amount { amount currencyCode } }
             }
           }
         }
-        metaobjects(first: 50) {
+        metaobjects(first: 50, type: "brand_info") {
           nodes {
             type
             handle
             fields { key value }
           }
         }
-        deliveryProfiles(first: 10) {
+        deliveryProfiles(first: 5) {
           nodes {
             name
-            profileLocationGroups {
-              locationGroup {
-                countries { name code }
-              }
-              methodDefinitions(first: 10) {
-                nodes {
-                  name
-                  rateDefinition {
-                    price { amount currencyCode }
-                  }
-                }
-              }
-            }
           }
         }
         orders(first: 250) {
@@ -103,7 +90,7 @@ export async function indexStoreData(admin, session, prisma) {
             id
             name
             totalPriceSet { presentmentMoney { amount currencyCode } }
-            lineItems(first: 5) {
+            lineItems(first: 10) {
               nodes { title quantity }
             }
           }
@@ -112,11 +99,12 @@ export async function indexStoreData(admin, session, prisma) {
     );
 
     const responseJson = await fullDataRes.json();
+    console.log("[INDEXER] GraphQL Full Response:", JSON.stringify(responseJson).substring(0, 1000));
     const data = responseJson.data;
 
-    if (!data) {
-      console.error("[INDEXER] GraphQL returned no data:", responseJson.errors);
-      throw new Error("Failed to fetch store data");
+    if (!data || responseJson.errors) {
+      console.error("[INDEXER] GraphQL Errors:", responseJson.errors);
+      if (!data) throw new Error("Failed to fetch store data: " + JSON.stringify(responseJson.errors));
     }
 
     const { shop, products, collections, articles, pages, priceRules, metaobjects, deliveryProfiles, orders } = data;
@@ -187,16 +175,11 @@ export async function indexStoreData(admin, session, prisma) {
 
     // Shipping Methods
     deliveryProfiles.nodes.forEach(profile => {
-      profile.profileLocationGroups.forEach(group => {
-        const countries = group.locationGroup.countries.map(c => c.name).join(', ');
-        group.methodDefinitions.nodes.forEach(method => {
-          itemsToCreate.push({
-            shopDomain,
-            type: 'shipping_info',
-            title: `Shipping: ${method.name}`,
-            content: `Shipping Method: ${method.name}. Price: ${method.rateDefinition?.price.amount} ${method.rateDefinition?.price.currencyCode}. Available in: ${countries}. Delivery Profile: ${profile.name}.`
-          });
-        });
+      itemsToCreate.push({
+        shopDomain,
+        type: 'shipping_info',
+        title: `Shipping Profile: ${profile.name}`,
+        content: `Standard Shipping Profile: ${profile.name}`
       });
     });
 
@@ -263,19 +246,21 @@ export async function indexStoreData(admin, session, prisma) {
     });
 
     // Discounts
-    priceRules.nodes.forEach(d => {
-      let valueStr = "";
-      if (d.valueV2.percentage !== undefined) valueStr = `${d.valueV2.percentage}% off`;
-      else if (d.valueV2.amount !== undefined) valueStr = `${d.valueV2.amount} ${d.valueV2.currencyCode} off`;
+    if (priceRules) {
+      priceRules.nodes.forEach(d => {
+        let valueStr = "";
+        if (d.valueV2?.__typename === 'PriceRulePercentValue') valueStr = `${d.valueV2.percentage}% off`;
+        else if (d.valueV2?.__typename === 'PriceRuleFixedAmountValue') valueStr = `${d.valueV2.amount.amount} ${d.valueV2.amount.currencyCode} off`;
 
-      itemsToCreate.push({
-        shopDomain,
-        type: 'discount',
-        externalId: d.id,
-        title: d.title,
-        content: `Discount/Promo: ${d.title}. Value: ${valueStr}`
+        itemsToCreate.push({
+          shopDomain,
+          type: 'discount',
+          externalId: d.id,
+          title: d.title,
+          content: `Discount/Promo: ${d.title}. Value: ${valueStr}`
+        });
       });
-    });
+    }
 
     // Metaobjects
     metaobjects.nodes.forEach(mo => {
