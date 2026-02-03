@@ -31,7 +31,7 @@ export async function indexStoreData(admin, session, prisma) {
           shippingPolicy { body title }
           termsOfService { body title }
         }
-        products(first: 50) {
+        products(first: 250) {
           nodes {
             id
             title
@@ -42,28 +42,28 @@ export async function indexStoreData(admin, session, prisma) {
             }
           }
         }
-        collections(first: 50) {
+        collections(first: 250) {
           nodes {
             id
             title
             description
           }
         }
-        articles(first: 50) {
+        articles(first: 250) {
           nodes {
             id
             title
             contentHtml
           }
         }
-        pages(first: 50) {
+        pages(first: 250) {
           nodes {
             id
             title
             body
           }
         }
-        priceRules(first: 20) {
+        priceRules(first: 250) {
           nodes {
             id
             title
