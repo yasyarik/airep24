@@ -31,7 +31,7 @@ export async function indexStoreData(admin, session, prisma) {
           shippingPolicy { body title }
           termsOfService { body title }
         }
-        products(first: 250) {
+        products(first: 50) {
           nodes {
             id
             title
@@ -42,55 +42,33 @@ export async function indexStoreData(admin, session, prisma) {
             }
           }
         }
-        collections(first: 250) {
+        collections(first: 50) {
           nodes {
             id
             title
             description
           }
         }
-        articles(first: 250) {
+        articles(first: 50) {
           nodes {
             id
             title
             contentHtml
           }
         }
-        pages(first: 250) {
+        pages(first: 50) {
           nodes {
             id
             title
             body
           }
         }
-        priceRules(first: 250) {
-          nodes {
-            id
-            title
-            valueV2 {
-              ... on PriceRulePercentValue { percentage }
-              ... on PriceRuleFixedAmountValue { amount { amount currencyCode } }
-            }
-          }
-        }
-        metaobjects(first: 50, type: "brand_info") {
-          nodes {
-            type
-            handle
-            fields { key value }
-          }
-        }
-        deliveryProfiles(first: 5) {
-          nodes {
-            name
-          }
-        }
-        orders(first: 250) {
+        orders(first: 50) {
           nodes {
             id
             name
             totalPriceSet { presentmentMoney { amount currencyCode } }
-            lineItems(first: 10) {
+            lineItems(first: 5) {
               nodes { title quantity }
             }
           }
@@ -99,17 +77,14 @@ export async function indexStoreData(admin, session, prisma) {
     );
 
     const responseJson = await fullDataRes.json();
-    console.log("[INDEXER] GraphQL Full Response:", JSON.stringify(responseJson).substring(0, 1000));
     const data = responseJson.data;
 
-    if (!data || responseJson.errors) {
-      console.error("[INDEXER] GraphQL Errors:", responseJson.errors);
-      if (!data) throw new Error("Failed to fetch store data: " + JSON.stringify(responseJson.errors));
+    if (!data) {
+      console.error("[INDEXER] GraphQL Error:", responseJson.errors);
+      throw new Error("Failed to fetch store data");
     }
 
     const { shop, products, collections, articles, pages, priceRules, metaobjects, deliveryProfiles, orders } = data;
-
-    console.log(`[INDEXER] Fetched: ${products?.nodes?.length || 0} products, ${collections?.nodes?.length || 0} collections, ${articles?.nodes?.length || 0} articles, ${pages?.nodes?.length || 0} pages, ${orders?.nodes?.length || 0} orders`);
 
     // --- PREPARE ITEMS ---
     const itemsToCreate = [];
@@ -123,20 +98,17 @@ export async function indexStoreData(admin, session, prisma) {
       const themesData = await themesRes.json();
       const themes = themesData.themes || [];
       const mainTheme = themes.find(t => t.role === 'main');
-      console.log(`[INDEXER] Main theme found: ${mainTheme?.name || 'NONE'}`);
 
       if (mainTheme) {
-        console.log(`[INDEXER] Fetching assets for theme ${mainTheme.id}...`);
         const assetsRes = await fetch(`https://${shopDomain}/admin/api/2025-10/themes/${mainTheme.id}/assets.json`, {
           headers: { "X-Shopify-Access-Token": session.accessToken }
         });
         const assetsData = await assetsRes.json();
         const assetList = assetsData.assets || [];
-        console.log(`[INDEXER] Found ${assetList.length} assets`);
 
         const templateAssets = assetList.filter(a => a.key.startsWith('templates/') && a.key.endsWith('.json'));
 
-        for (const assetRef of templateAssets.slice(0, 10)) {
+        for (const assetRef of templateAssets.slice(0, 5)) {
           const assetRes = await fetch(`https://${shopDomain}/admin/api/2025-10/themes/${mainTheme.id}/assets.json?asset[key]=${assetRef.key}`, {
             headers: { "X-Shopify-Access-Token": session.accessToken }
           });
@@ -148,7 +120,7 @@ export async function indexStoreData(admin, session, prisma) {
               shopDomain,
               type: 'theme_section',
               title: `Theme: ${assetRef.key}`,
-              content: `Front-end Section Data (${assetRef.key}): ${asset.value.substring(0, 5000)}`
+              content: `Front-end Section Data (${assetRef.key}): ${asset.value.substring(0, 3000)}`
             });
           }
         }
@@ -158,99 +130,122 @@ export async function indexStoreData(admin, session, prisma) {
     }
 
     // Shop Metadata
-    itemsToCreate.push({
-      shopDomain,
-      type: 'shop_metadata',
-      title: 'General Store Info',
-      content: `Store Name: ${shop.name}. Description: ${shop.description}. Contact: ${shop.contactEmail}. Domain: ${shop.primaryDomain?.url}. Currency: ${shop.currencyCode}. Ships to: ${shop.shipsToCountries.join(', ')}.`
-    });
-
-    // Payment Methods
-    itemsToCreate.push({
-      shopDomain,
-      type: 'payment_info',
-      title: 'Payment Methods',
-      content: `Accepted Cards: ${shop.paymentSettings.acceptedCardBrands.join(', ')}. Supported Currencies: ${shop.paymentSettings.enabledPresentmentCurrencies.join(', ')}.`
-    });
-
-    // Shipping Methods
-    deliveryProfiles.nodes.forEach(profile => {
+    if (shop) {
       itemsToCreate.push({
         shopDomain,
-        type: 'shipping_info',
-        title: `Shipping Profile: ${profile.name}`,
-        content: `Standard Shipping Profile: ${profile.name}`
+        type: 'shop_metadata',
+        title: 'General Store Info',
+        content: `Store Name: ${shop.name}. Description: ${shop.description}. Contact: ${shop.contactEmail}. Domain: ${shop.primaryDomain?.url}. Currency: ${shop.currencyCode}. Ships to: ${shop.shipsToCountries?.join(', ')}.`
       });
-    });
 
-    // Products
-    products.nodes.forEach(p => {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'product',
-        externalId: p.id,
-        title: p.title,
-        content: `Product: ${p.title}. Description: ${p.description}. Price: ${p.variants.nodes[0]?.price}. URL: /products/${p.handle}`
-      });
-    });
-
-    // Collections
-    collections.nodes.forEach(c => {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'collection',
-        externalId: c.id,
-        title: c.title,
-        content: `Collection: ${c.title}. Description: ${c.description}`
-      });
-    });
-
-    // Blogs
-    articles.nodes.forEach(a => {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'article',
-        externalId: a.id,
-        title: a.title,
-        content: `Blog Post: ${a.title}. Content: ${a.contentHtml.replace(/<[^>]*>/g, '')}`
-      });
-    });
-
-    // Pages
-    pages.nodes.forEach(p => {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'page',
-        externalId: p.id,
-        title: p.title,
-        content: `Page: ${p.title}. Content: ${p.body.replace(/<[^>]*>/g, '')}`
-      });
-    });
-
-    // Policies
-    const policies = [
-      { t: 'Privacy Policy', p: shop.privacyPolicy },
-      { t: 'Refund Policy', p: shop.refundPolicy },
-      { t: 'Shipping Policy', p: shop.shippingPolicy },
-      { t: 'Terms of Service', p: shop.termsOfService }
-    ];
-    policies.forEach(pol => {
-      if (pol.p) {
+      if (shop.paymentSettings) {
         itemsToCreate.push({
           shopDomain,
-          type: 'policy',
-          title: pol.t,
-          content: `Policy: ${pol.t}. Body: ${pol.p.body.replace(/<[^>]*>/g, '')}`
+          type: 'payment_info',
+          title: 'Payment Methods',
+          content: `Accepted Cards: ${shop.paymentSettings.acceptedCardBrands?.join(', ')}. Supported Currencies: ${shop.paymentSettings.enabledPresentmentCurrencies?.join(', ')}.`
         });
       }
-    });
+
+      const policies = [
+        { t: 'Privacy Policy', p: shop.privacyPolicy },
+        { t: 'Refund Policy', p: shop.refundPolicy },
+        { t: 'Shipping Policy', p: shop.shippingPolicy },
+        { t: 'Terms of Service', p: shop.termsOfService }
+      ];
+      policies.forEach(pol => {
+        if (pol.p) {
+          itemsToCreate.push({
+            shopDomain,
+            type: 'policy',
+            title: pol.t,
+            content: `Policy: ${pol.t}. Body: ${pol.p.body.replace(/<[^>]*>/g, '')}`
+          });
+        }
+      });
+
+      if (shop.metafields) {
+        shop.metafields.nodes.forEach(mf => {
+          itemsToCreate.push({
+            shopDomain,
+            type: 'metafield',
+            title: `Shop Metafield: ${mf.namespace}.${mf.key}`,
+            content: `Store Setting (${mf.namespace}.${mf.key}): ${mf.value}`
+          });
+        });
+      }
+    }
+
+    // Shipping Methods
+    if (deliveryProfiles) {
+      deliveryProfiles.nodes.forEach(profile => {
+        itemsToCreate.push({
+          shopDomain,
+          type: 'shipping_info',
+          title: `Shipping Profile: ${profile.name}`,
+          content: `Standard Shipping Profile: ${profile.name}`
+        });
+      });
+    }
+
+    // Products
+    if (products) {
+      products.nodes.forEach(p => {
+        itemsToCreate.push({
+          shopDomain,
+          type: 'product',
+          externalId: p.id,
+          title: p.title,
+          content: `Product: ${p.title}. Description: ${p.description}. Price: ${p.variants.nodes[0]?.price}. URL: /products/${p.handle}`
+        });
+      });
+    }
+
+    // Collections
+    if (collections) {
+      collections.nodes.forEach(c => {
+        itemsToCreate.push({
+          shopDomain,
+          type: 'collection',
+          externalId: c.id,
+          title: c.title,
+          content: `Collection: ${c.title}. Description: ${c.description}`
+        });
+      });
+    }
+
+    // Blogs
+    if (articles) {
+      articles.nodes.forEach(a => {
+        itemsToCreate.push({
+          shopDomain,
+          type: 'article',
+          externalId: a.id,
+          title: a.title,
+          content: `Blog Post: ${a.title}. Content: ${a.contentHtml.replace(/<[^>]*>/g, '')}`
+        });
+      });
+    }
+
+    // Pages
+    if (pages) {
+      pages.nodes.forEach(p => {
+        itemsToCreate.push({
+          shopDomain,
+          type: 'page',
+          externalId: p.id,
+          title: p.title,
+          content: `Page: ${p.title}. Content: ${p.body.replace(/<[^>]*>/g, '')}`
+        });
+      });
+    }
 
     // Discounts
     if (priceRules) {
       priceRules.nodes.forEach(d => {
         let valueStr = "";
         if (d.valueV2?.__typename === 'PriceRulePercentValue') valueStr = `${d.valueV2.percentage}% off`;
-        else if (d.valueV2?.__typename === 'PriceRuleFixedAmountValue') valueStr = `${d.valueV2.amount.amount} ${d.valueV2.amount.currencyCode} off`;
+        else if (d.valueV2?.__typename === 'PriceRuleFixedAmountValue') valueStr = `${d.valueV2.amount?.amount} ${d.valueV2.amount?.currencyCode} off`;
 
         itemsToCreate.push({
           shopDomain,
@@ -263,37 +258,31 @@ export async function indexStoreData(admin, session, prisma) {
     }
 
     // Metaobjects
-    metaobjects.nodes.forEach(mo => {
-      const fieldsStr = mo.fields.map(f => `${f.key}: ${f.value}`).join('. ');
-      itemsToCreate.push({
-        shopDomain,
-        type: 'metaobject',
-        title: `${mo.type} - ${mo.handle}`,
-        content: `Custom Data (${mo.type}): ${fieldsStr}`
+    if (metaobjects) {
+      metaobjects.nodes.forEach(mo => {
+        const fieldsStr = mo.fields.map(f => `${f.key}: ${f.value}`).join('. ');
+        itemsToCreate.push({
+          shopDomain,
+          type: 'metaobject',
+          title: `${mo.type} - ${mo.handle}`,
+          content: `Custom Data (${mo.type}): ${fieldsStr}`
+        });
       });
-    });
-
-    // Metafields
-    shop.metafields.nodes.forEach(mf => {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'metafield',
-        title: `Shop Metafield: ${mf.namespace}.${mf.key}`,
-        content: `Store Setting (${mf.namespace}.${mf.key}): ${mf.value}`
-      });
-    });
+    }
 
     // Orders
-    orders.nodes.forEach(o => {
-      const itemsStr = o.lineItems.nodes.map(li => `${li.quantity}x ${li.title}`).join(', ');
-      itemsToCreate.push({
-        shopDomain,
-        type: 'order',
-        externalId: o.id,
-        title: `Order ${o.name}`,
-        content: `Order: ${o.name}. Total: ${o.totalPriceSet.presentmentMoney.amount} ${o.totalPriceSet.presentmentMoney.currencyCode}. Items: ${itemsStr}`
+    if (orders) {
+      orders.nodes.forEach(o => {
+        const itemsStr = o.lineItems.nodes.map(li => `${li.quantity}x ${li.title}`).join(', ');
+        itemsToCreate.push({
+          shopDomain,
+          type: 'order',
+          externalId: o.id,
+          title: `Order ${o.name}`,
+          content: `Order: ${o.name}. Total: ${o.totalPriceSet.presentmentMoney?.amount} ${o.totalPriceSet.presentmentMoney?.currencyCode}. Items: ${itemsStr}`
+        });
       });
-    });
+    }
 
     // --- SAVE TO DATABASE ---
     await prisma.knowledgeItem.deleteMany({ where: { shopDomain } });
@@ -311,24 +300,24 @@ export async function indexStoreData(admin, session, prisma) {
       where: { shopDomain },
       create: {
         shopDomain,
-        products: products.nodes.length,
-        collections: collections.nodes.length,
-        articles: articles.nodes.length,
-        pages: pages.nodes.length,
+        products: products?.nodes?.length || 0,
+        collections: collections?.nodes?.length || 0,
+        articles: articles?.nodes?.length || 0,
+        pages: pages?.nodes?.length || 0,
         policies: itemsToCreate.filter(i => i.type === 'policy' || i.type === 'shipping_info' || i.type === 'payment_info').length,
-        discounts: priceRules.nodes.length,
-        orders: orders.nodes.length,
+        discounts: priceRules?.nodes?.length || 0,
+        orders: orders?.nodes?.length || 0,
         themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
         lastIndexed: new Date()
       },
       update: {
-        products: products.nodes.length,
-        collections: collections.nodes.length,
-        articles: articles.nodes.length,
-        pages: pages.nodes.length,
+        products: products?.nodes?.length || 0,
+        collections: collections?.nodes?.length || 0,
+        articles: articles?.nodes?.length || 0,
+        pages: pages?.nodes?.length || 0,
         policies: itemsToCreate.filter(i => i.type === 'policy' || i.type === 'shipping_info' || i.type === 'payment_info').length,
-        discounts: priceRules.nodes.length,
-        orders: orders.nodes.length,
+        discounts: priceRules?.nodes?.length || 0,
+        orders: orders?.nodes?.length || 0,
         themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
         lastIndexed: new Date()
       }

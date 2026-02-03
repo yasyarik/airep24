@@ -150,35 +150,18 @@ export const loader = async ({ request }) => {
     if (!widgetConfig) widgetConfig = await prisma.widgetConfig.create({ data: { shopDomain: session.shop } });
     const activeChatCount = await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } });
 
-    // 5. Check True Theme Status (App Embed) via GraphQL
+    // 5. Check True Theme Status (App Embed)
     let themeEnabled = false;
     try {
-      const themesResponse = await admin.graphql(
-        `#graphql
-        query getThemes {
-          themes(first: 10) {
-            nodes {
-              id
-              name
-              role
-            }
-          }
-        }`
-      );
-      const themesData = await themesResponse.json();
-
-      // If scopes changed, GraphQL will return Access denied. We must re-auth.
-      if (themesData.errors?.some(e => e.message.includes('Access denied'))) {
-        console.log("[THEME CHECK] Access denied. Redirecting for re-auth...");
-        throw await authenticate.admin(request);
-      }
-
-      const themes = themesData.data?.themes?.nodes || [];
-      const mainTheme = themes.find(t => t.role === 'MAIN');
+      const themesRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes.json`, {
+        headers: { "X-Shopify-Access-Token": session.accessToken }
+      });
+      const themesData = await themesRes.json();
+      const themes = themesData.themes || [];
+      const mainTheme = themes.find(t => t.role === 'main');
 
       if (mainTheme) {
-        const themeId = mainTheme.id.split('/').pop();
-        const assetRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes/${themeId}/assets.json?asset[key]=config/settings_data.json`, {
+        const assetRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes/${mainTheme.id}/assets.json?asset[key]=config/settings_data.json`, {
           headers: { "X-Shopify-Access-Token": session.accessToken }
         });
         const assetData = await assetRes.json();
@@ -190,20 +173,10 @@ export const loader = async ({ request }) => {
           themeEnabled = Object.values(blocks).some(block =>
             block.type?.includes('airep24-widget') && !block.disabled
           );
-        } else {
-          console.log("[THEME CHECK] settings_data.json not found or empty:", assetData);
         }
-      } else {
-        console.log("[THEME CHECK] No main theme found via GraphQL");
       }
     } catch (e) {
-      if (e instanceof Response) throw e;
-      const errMsg = e.message || "";
-      if (errMsg.toLowerCase().includes('access denied') || errMsg.toLowerCase().includes('scope')) {
-        console.log("[LOADER] Access denied detected. Forcing re-auth...");
-        throw await authenticate.admin(request);
-      }
-      console.warn("[THEME CHECK] Failed:", errMsg);
+      console.warn("Theme check failed:", e.message);
     }
 
     return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled };
@@ -315,10 +288,6 @@ export const action = async ({ request }) => {
     if (intent === "index") {
       console.log("[DASHBOARD] Starting user-triggered sync");
       const result = await indexStoreData(admin, session, prisma);
-      if (!result.success && (result.error?.includes('Access denied') || result.error?.includes('scope'))) {
-        console.log("[ACTION] Access denied during sync. Forcing re-auth...");
-        throw await authenticate.admin(request);
-      }
       return { success: result.success, indexResult: result };
     }
 
