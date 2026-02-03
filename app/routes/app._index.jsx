@@ -276,7 +276,7 @@ export const action = async ({ request }) => {
 
     if (intent === "index") {
       console.log("[DASHBOARD] Starting user-triggered sync");
-      const result = await indexStoreData(admin, session.shop, prisma);
+      const result = await indexStoreData(admin, session, prisma);
       return { success: result.success, indexResult: result };
     }
 

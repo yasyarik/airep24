@@ -3,7 +3,8 @@ import { BILLING_PLANS } from "../config/billing";
 /**
  * Service to index Shopify store data into the local Knowledge Base
  */
-export async function indexStoreData(admin, shopDomain, prisma) {
+export async function indexStoreData(admin, session, prisma) {
+  const shopDomain = session.shop;
   console.log(`[INDEXER] Starting full index for ${shopDomain}`);
 
   try {
@@ -125,21 +126,29 @@ export async function indexStoreData(admin, shopDomain, prisma) {
 
     // Theme Sections Extraction
     try {
-      const session = { shop: shopDomain };
-      const ThemeResource = admin.rest.resources.Theme;
-      const themes = await ThemeResource.all({ session });
-      const themesData = themes.data || (Array.isArray(themes) ? themes : []);
-      const mainTheme = themesData.find(t => t.role === 'main');
+      const themesRes = await fetch(`https://${shopDomain}/admin/api/2025-10/themes.json`, {
+        headers: { "X-Shopify-Access-Token": session.accessToken }
+      });
+      const themesData = await themesRes.json();
+      const themes = themesData.themes || [];
+      const mainTheme = themes.find(t => t.role === 'main');
 
       if (mainTheme) {
-        const AssetResource = admin.rest.resources.Asset;
-        const assetResponse = await AssetResource.all({ session, theme_id: mainTheme.id });
-        const assetList = assetResponse.data || (Array.isArray(assetResponse) ? assetResponse : []);
+        const assetsRes = await fetch(`https://${shopDomain}/admin/api/2025-10/themes/${mainTheme.id}/assets.json`, {
+          headers: { "X-Shopify-Access-Token": session.accessToken }
+        });
+        const assetsData = await assetsRes.json();
+        const assetList = assetsData.assets || [];
 
         const templateAssets = assetList.filter(a => a.key.startsWith('templates/') && a.key.endsWith('.json'));
 
         for (const assetRef of templateAssets.slice(0, 10)) {
-          const asset = await AssetResource.find({ theme_id: mainTheme.id, asset: { key: assetRef.key } });
+          const assetRes = await fetch(`https://${shopDomain}/admin/api/2025-10/themes/${mainTheme.id}/assets.json?asset[key]=${assetRef.key}`, {
+            headers: { "X-Shopify-Access-Token": session.accessToken }
+          });
+          const singleAssetData = await assetRes.json();
+          const asset = singleAssetData.asset;
+
           if (asset && asset.value) {
             itemsToCreate.push({
               shopDomain,
