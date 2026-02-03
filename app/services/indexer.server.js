@@ -19,10 +19,6 @@ export async function indexStoreData(admin, session, prisma) {
           primaryDomain { url }
           currencyCode
           shipsToCountries
-          paymentSettings {
-            enabledPresentmentCurrencies
-            acceptedCardBrands
-          }
           metafields(first: 20) {
             nodes { key value namespace }
           }
@@ -137,15 +133,6 @@ export async function indexStoreData(admin, session, prisma) {
         title: 'General Store Info',
         content: `Store Name: ${shop.name}. Description: ${shop.description}. Contact: ${shop.contactEmail}. Domain: ${shop.primaryDomain?.url}. Currency: ${shop.currencyCode}. Ships to: ${shop.shipsToCountries?.join(', ')}.`
       });
-
-      if (shop.paymentSettings) {
-        itemsToCreate.push({
-          shopDomain,
-          type: 'payment_info',
-          title: 'Payment Methods',
-          content: `Accepted Cards: ${shop.paymentSettings.acceptedCardBrands?.join(', ')}. Supported Currencies: ${shop.paymentSettings.enabledPresentmentCurrencies?.join(', ')}.`
-        });
-      }
 
       const policies = [
         { t: 'Privacy Policy', p: shop.privacyPolicy },

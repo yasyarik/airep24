@@ -169,24 +169,35 @@
 
 <script>
   (function() {
+    console.log("AiRep24: Widget script starting...");
     const SHOP_DOMAIN = "{{ shop.permanent_domain }}";
-    // const API_BASE = "https://app.airep24.com"; // Production
-    const API_BASE = "https://app.airep24.com"; // Should match your server
-    // Note: During dev, you might need tunnel URL. But assume deployment URL for now.
+    const API_BASE = "https://app.airep24.com";
+    
+    console.log("AiRep24: Shop Domain:", SHOP_DOMAIN);
     
     // Config Endpoint
     const CONFIG_URL = `${API_BASE}/api/widget-config?shop=${SHOP_DOMAIN}`;
-    // Chat Endpoint
     const CHAT_URL = `${API_BASE}/api/chat`;
 
+    console.log("AiRep24: Fetching config from:", CONFIG_URL);
+
     fetch(CONFIG_URL)
-      .then(res => res.json())
+      .then(res => {
+        console.log("AiRep24: Config response status:", res.status);
+        return res.json();
+      })
       .then(data => {
+        console.log("AiRep24: Config data received:", data);
         if (data.enabled) {
+          console.log("AiRep24: Widget is enabled, initializing...");
           initWidget(data);
+        } else {
+          console.log("AiRep24: Widget is DISABLED in config or missing profile.");
         }
       })
-      .catch(err => console.error("AiRep24 Error:", err));
+      .catch(err => {
+         console.error("AiRep24: Error fetching config:", err);
+      });
 
     function initWidget(data) {
       const config = data.config;
