@@ -156,7 +156,7 @@ export const loader = async ({ request }) => {
       const themesResponse = await admin.graphql(
         `#graphql
         query getThemes {
-          themes(role: MAIN, first: 1) {
+          themes(first: 10) {
             nodes {
               id
               name
@@ -166,13 +166,17 @@ export const loader = async ({ request }) => {
         }`
       );
       const themesData = await themesResponse.json();
-      console.log("[THEME CHECK] GraphQL Response:", JSON.stringify(themesData));
 
-      const mainTheme = themesData.data?.themes?.nodes?.[0];
+      // If scopes changed, GraphQL will return Access denied. We must re-auth.
+      if (themesData.errors?.some(e => e.message.includes('Access denied'))) {
+        console.log("[THEME CHECK] Access denied. Redirecting for re-auth...");
+        throw await authenticate.admin(request);
+      }
+
+      const themes = themesData.data?.themes?.nodes || [];
+      const mainTheme = themes.find(t => t.role === 'MAIN');
 
       if (mainTheme) {
-        // Assets still require REST or a very specific GraphQL mutation/query for some fields.
-        // Let's try direct fetch for config/settings_data.json but with better error handling.
         const themeId = mainTheme.id.split('/').pop();
         const assetRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes/${themeId}/assets.json?asset[key]=config/settings_data.json`, {
           headers: { "X-Shopify-Access-Token": session.accessToken }
