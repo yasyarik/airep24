@@ -98,7 +98,7 @@ export async function indexStoreData(admin, session, prisma) {
             }
           }
         }
-        orders(first: 50) {
+        orders(first: 250) {
           nodes {
             id
             name

@@ -125,7 +125,18 @@ export const loader = async ({ request }) => {
     // Filter profiles list for UI
     profiles = profiles.filter(p => !(p.avatarType === 'preset' && !validPresetIds.includes(p.avatarId)));
 
-    // Mark presets in memory for the UI to know (redundant check but good for safety)
+    // C. Ensure at least one profile is active
+    let activeProfile = profiles.find(p => p.isActive);
+    if (!activeProfile && profiles.length > 0) {
+      await prisma.characterProfile.update({
+        where: { id: profiles[0].id },
+        data: { isActive: true }
+      });
+      profiles[0].isActive = true;
+      activeProfile = profiles[0];
+    }
+
+    // Mark presets in memory
     profiles = profiles.map(p => ({
       ...p,
       isPreset: p.avatarType === 'preset'
@@ -146,6 +157,7 @@ export const loader = async ({ request }) => {
         headers: { "X-Shopify-Access-Token": session.accessToken }
       });
       const themesData = await themesRes.json();
+      console.log("[THEME CHECK] Themes found:", themesData.themes?.length || 0);
       const themes = themesData.themes || [];
       const mainTheme = themes.find(t => t.role === 'main');
 
@@ -159,9 +171,13 @@ export const loader = async ({ request }) => {
         if (settingsAsset && settingsAsset.value) {
           const json = JSON.parse(settingsAsset.value);
           const blocks = json.current?.blocks || {};
+          console.log("[THEME CHECK] Blocks count:", Object.keys(blocks).length);
           themeEnabled = Object.values(blocks).some(block =>
             block.type?.includes('airep24-widget') && !block.disabled
           );
+          if (!themeEnabled) {
+            console.log("[THEME CHECK] Block 'airep24-widget' not found in settings_data.json among active blocks");
+          }
         }
       }
     } catch (e) {
