@@ -137,11 +137,72 @@ export const loader = async ({ request }) => {
     if (!widgetConfig) widgetConfig = await prisma.widgetConfig.create({ data: { shopDomain: session.shop } });
     const activeChatCount = await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } });
 
-    // 5. Theme App Extension Status
-    // Note: We assume the widget is enabled since it's a theme app extension
-    // that merchants control directly through their theme editor.
-    // We don't have read_themes scope, so we can't verify programmatically.
-    const themeEnabled = true;
+    // 5. Theme App Extension Status Check
+    let themeEnabled = false;
+    let needsReinstall = false;
+
+    try {
+      // Try GraphQL approach first (may have different permission model)
+      const themeQuery = await admin.graphql(`
+        query {
+          appInstallation {
+            activeSubscriptions {
+              name
+              status
+            }
+          }
+        }
+      `);
+
+      const themeData = await themeQuery.json();
+      console.log('[THEME CHECK] GraphQL response:', JSON.stringify(themeData));
+
+      // Fallback: Check via REST if we have the scope
+      const sessionScopes = (session.scope || "").split(",").map(s => s.trim());
+      if (sessionScopes.includes('read_themes')) {
+        const themesRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes.json`, {
+          headers: { "X-Shopify-Access-Token": session.accessToken }
+        });
+        const themesData = await themesRes.json();
+
+        if (themesData.errors) {
+          console.log('[THEME CHECK] REST API error:', themesData.errors);
+          needsReinstall = true;
+        } else {
+          const mainTheme = themesData.themes?.find(t => t.role === 'main');
+
+          if (mainTheme) {
+            const assetRes = await fetch(
+              `https://${session.shop}/admin/api/2025-10/themes/${mainTheme.id}/assets.json?asset[key]=config/settings_data.json`,
+              { headers: { "X-Shopify-Access-Token": session.accessToken } }
+            );
+            const assetData = await assetRes.json();
+
+            if (assetData.asset?.value) {
+              const settings = JSON.parse(assetData.asset.value);
+              const blocks = settings.current?.blocks || {};
+              themeEnabled = Object.values(blocks).some(b =>
+                (b.type?.includes('airep24-widget') || b.type?.includes('airep24')) && !b.disabled
+              );
+
+              if (!themeEnabled) {
+                console.log('[THEME CHECK] Widget not found. Block types:',
+                  Object.values(blocks).map(b => b.type).filter(Boolean).slice(0, 10)
+                );
+              }
+            }
+          }
+        }
+      } else {
+        console.log('[THEME CHECK] Missing read_themes scope');
+        needsReinstall = true;
+        // Default to enabled to avoid false alarms
+        themeEnabled = true;
+      }
+    } catch (e) {
+      console.warn('[THEME CHECK] Error:', e.message);
+      themeEnabled = true; // Assume enabled on error to avoid false negatives
+    }
 
     return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled };
   } catch (error) {
