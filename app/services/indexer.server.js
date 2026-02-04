@@ -59,52 +59,6 @@ export async function indexStoreData(admin, session, prisma) {
             }
           }
         }
-        discountNodes(first: 50) {
-          nodes {
-            id
-            discount {
-              ... on DiscountCodeBasic {
-                title
-                codes(first: 1) {
-                  nodes {
-                    code
-                  }
-                }
-                summary
-              }
-              ... on DiscountCodeBxgy {
-                title
-                codes(first: 1) {
-                  nodes {
-                    code
-                  }
-                }
-                summary
-              }
-              ... on DiscountCodeFreeShipping {
-                title
-                codes(first: 1) {
-                  nodes {
-                    code
-                  }
-                }
-                summary
-              }
-              ... on DiscountAutomaticBasic {
-                title
-                summary
-              }
-              ... on DiscountAutomaticBxgy {
-                title
-                summary
-              }
-              ... on DiscountAutomaticFreeShipping {
-                title
-                summary
-              }
-            }
-          }
-        }
       }`
     );
 
@@ -117,8 +71,8 @@ export async function indexStoreData(admin, session, prisma) {
       return { success: false, error: "Shopify API returned no data" };
     }
 
-    const { shop, products, collections, articles, pages, orders, discountNodes } = data;
-    console.log(`[INDEXER] Fetched: ${products?.nodes?.length || 0} products, ${collections?.nodes?.length || 0} collections, ${orders?.nodes?.length || 0} orders, ${discountNodes?.nodes?.length || 0} discounts`);
+    const { shop, products, collections, articles, pages, orders } = data;
+    console.log(`[INDEXER] Fetched: ${products?.nodes?.length || 0} products, ${collections?.nodes?.length || 0} collections, ${orders?.nodes?.length || 0} orders`);
 
     // Debug: log full data structure
     console.log('[INDEXER] Full data keys:', Object.keys(data));
@@ -126,9 +80,6 @@ export async function indexStoreData(admin, session, prisma) {
       console.log('[INDEXER] Orders object:', JSON.stringify(orders).substring(0, 500));
     } else {
       console.log('[INDEXER] Orders is null/undefined');
-    }
-    if (discountNodes) {
-      console.log('[INDEXER] Discounts object:', JSON.stringify(discountNodes).substring(0, 500));
     }
 
     // --- PREPARE ITEMS ---
@@ -285,33 +236,6 @@ export async function indexStoreData(admin, session, prisma) {
       });
     }
 
-    // Discounts
-    if (discountNodes?.nodes) {
-      discountNodes.nodes.forEach(node => {
-        const discount = node.discount;
-        if (!discount) return;
-
-        const title = discount.title || 'Unnamed Discount';
-        const summary = discount.summary || '';
-        let code = '';
-
-        // Extract code if it's a code-based discount
-        if (discount.codes?.nodes?.[0]?.code) {
-          code = discount.codes.nodes[0].code;
-        }
-
-        const isAutomatic = discount.__typename?.includes('Automatic');
-        const discountType = isAutomatic ? 'Automatic Discount' : 'Discount Code';
-
-        itemsToCreate.push({
-          shopDomain,
-          type: 'discount',
-          externalId: node.id,
-          title: code ? `${title} (${code})` : title,
-          content: `${discountType}: ${title}${code ? ` - Code: ${code}` : ''}. ${summary}`
-        });
-      });
-    }
 
     // --- SAVE TO DATABASE ---
     await prisma.knowledgeItem.deleteMany({ where: { shopDomain } });
@@ -334,7 +258,7 @@ export async function indexStoreData(admin, session, prisma) {
         articles: articles?.nodes?.length || 0,
         pages: pages?.nodes?.length || 0,
         policies: itemsToCreate.filter(i => i.type === 'policy' || i.type === 'shipping_info' || i.type === 'payment_info').length,
-        discounts: discountNodes?.nodes?.length || 0,
+        discounts: 0,
         orders: orders?.nodes?.length || 0,
         themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
         lastIndexed: new Date()
@@ -345,7 +269,7 @@ export async function indexStoreData(admin, session, prisma) {
         articles: articles?.nodes?.length || 0,
         pages: pages?.nodes?.length || 0,
         policies: itemsToCreate.filter(i => i.type === 'policy' || i.type === 'shipping_info' || i.type === 'payment_info').length,
-        discounts: discountNodes?.nodes?.length || 0,
+        discounts: 0,
         orders: orders?.nodes?.length || 0,
         themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
         lastIndexed: new Date()
