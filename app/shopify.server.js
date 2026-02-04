@@ -13,6 +13,8 @@ import { restResources } from "@shopify/shopify-api/rest/admin/2025-10";
 export const PLAN_GROWTH = "Growth Plan";
 export const PLAN_SCALE = "Scale Plan";
 
+console.log("[SHOPIFY-INIT] Loading scopes:", process.env.SCOPES);
+
 const shopify = shopifyApp({
   restResources,
   apiKey: process.env.SHOPIFY_API_KEY,
