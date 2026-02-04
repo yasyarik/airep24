@@ -3,10 +3,10 @@ import prisma from "../db.server";
 /**
  * Indexes store data into KnowledgeBase
  * @param {Object} admin - Shopify GraphQL Admin client
- * @param {string} shopDomain - Store domain
  * @param {Object} session - Shopify session
  */
-export async function indexStoreData(admin, shopDomain, session) {
+export async function indexStoreData(admin, session) {
+  const shopDomain = session.shop;
   console.log(`[INDEXER] Starting full index for ${shopDomain}`);
 
   try {
