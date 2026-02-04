@@ -42,9 +42,17 @@ import { indexStoreData } from "../services/indexer.server";
 export const loader = async ({ request }) => {
   try {
     const { admin, session } = await authenticate.admin(request);
-    console.log("DEBUG: Admin object keys:", Object.keys(admin || {}));
-    if (admin && admin.rest) console.log("DEBUG: Admin REST is available");
-    else console.log("DEBUG: Admin REST IS MISSING");
+
+    // Check if scopes are sufficient. If not, trigger re-authentication.
+    const requiredScopes = (process.env.SCOPES || "").split(",").map(s => s.trim());
+    const sessionScopes = (session.scope || "").split(",").map(s => s.trim());
+    const hasAllScopes = requiredScopes.every(s => sessionScopes.includes(s));
+
+    if (!hasAllScopes) {
+      console.log(`[AUTH] Session has insufficient scopes. Required: ${requiredScopes}, Has: ${sessionScopes}. Redirecting...`);
+      // Use the helper to redirect with the new scopes
+      throw await authenticate.admin(request);
+    }
 
     // 1. Discover Presets
     const presetsDir = path.join(process.cwd(), "extensions", "airep24-widget", "assets", "presets");

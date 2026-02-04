@@ -39,7 +39,7 @@ export async function indexStoreData(admin, session, prisma) {
           nodes {
             id
             title
-            contentHtml
+            body
           }
         }
         pages(first: 50) {
@@ -195,7 +195,7 @@ export async function indexStoreData(admin, session, prisma) {
           type: 'article',
           externalId: a.id,
           title: a.title,
-          content: `Blog Post: ${a.title}. Content: ${a.contentHtml.replace(/<[^>]*>/g, '')}`
+          content: `Blog Post: ${a.title}. Content: ${a.body.replace(/<[^>]*>/g, '')}`
         });
       });
     }
