@@ -18,10 +18,11 @@ export async function indexStoreData(admin, session) {
           name
           myshopifyDomain
           currencyCode
-          privacyPolicy { body url }
-          refundPolicy { body url }
-          termsOfService { body url }
-          shippingPolicy { body url }
+          shopPolicies {
+            title
+            body
+            type
+          }
         }
         products(first: 100) {
           nodes {
@@ -149,24 +150,19 @@ export async function indexStoreData(admin, session) {
         content: `Store Name: ${shop.name}. Domain: ${shop.myshopifyDomain}. Currency: ${shop.currencyCode}.`
       });
 
-      const policies = [
-        { key: 'privacyPolicy', title: 'Privacy Policy' },
-        { key: 'refundPolicy', title: 'Refund Policy' },
-        { key: 'termsOfService', title: 'Terms of Service' },
-        { key: 'shippingPolicy', title: 'Shipping Policy' }
-      ];
-
-      policies.forEach(p => {
-        if (shop[p.key] && shop[p.key].body) {
-          itemsToCreate.push({
-            shopDomain,
-            type: 'policy',
-            externalId: p.key,
-            title: p.title,
-            content: `${p.title}: ${shop[p.key].body.replace(/<[^>]*>/g, '').substring(0, 10000)}`
-          });
-        }
-      });
+      if (shop.shopPolicies && shop.shopPolicies.length > 0) {
+        shop.shopPolicies.forEach(policy => {
+          if (policy.body) {
+            itemsToCreate.push({
+              shopDomain,
+              type: 'policy',
+              externalId: policy.type,
+              title: policy.title,
+              content: `${policy.title}: ${policy.body.replace(/<[^>]*>/g, '').substring(0, 10000)}`
+            });
+          }
+        });
+      }
     }
 
     // 3. Products
