@@ -43,15 +43,15 @@ export const loader = async ({ request }) => {
   try {
     const { admin, session } = await authenticate.admin(request);
 
-    // Force re-auth if scopes mismatch
+    // Check for missing scopes
     const currentScopes = session.scope?.split(',').map(s => s.trim()) || [];
     const requiredScopes = process.env.SCOPES?.split(',').map(s => s.trim()) || [];
     const isMissingScopes = requiredScopes.some(s => !currentScopes.includes(s));
 
     if (isMissingScopes) {
-      console.log(`[AUTH] Scopes out of sync. Current: ${session.scope}. Required: ${process.env.SCOPES}`);
-      const shop = session.shop;
-      return redirect(`/auth?shop=${shop}`);
+      console.log(`[AUTH] Scopes out of sync. Current: ${session.scope}.`);
+      // We don't redirect here to avoid "refused to connect" in iframe.
+      // We'll show a banner in the UI instead.
     }
 
 
@@ -215,7 +215,7 @@ export const loader = async ({ request }) => {
       themeEnabled = true; // Assume enabled on error to avoid false negatives
     }
 
-    return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled };
+    return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled, isMissingScopes };
   } catch (error) {
     console.error("[LOADER ERROR]:", error);
     return { error: error.message, stack: error.stack };
@@ -335,7 +335,7 @@ export const action = async ({ request }) => {
 };
 
 export default function Index() {
-  const { stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled } = useLoaderData();
+  const { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled, isMissingScopes } = useLoaderData();
   const fetcher = useFetcher();
   const uploadFetcher = useFetcher();
 
@@ -520,6 +520,15 @@ export default function Index() {
         <Banner tone={enableStatus.tone}>
           <Text as="p"><strong>{enableStatus.text}</strong></Text>
         </Banner>
+
+        {isMissingScopes && (
+          <Banner title="Action Required: Update App Permissions" tone="critical">
+            <BlockStack gap="200">
+              <Text as="p">To sync orders, discounts, and store policies, you must grant additional permissions.</Text>
+              <Button url={`/auth?shop=${session.shop}`} target="_top" tone="critical" fontWeight="bold">Authorize Missing Scopes</Button>
+            </BlockStack>
+          </Banner>
+        )}
 
         <Card>
           <BlockStack gap="400">
