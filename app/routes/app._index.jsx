@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
-import { useLoaderData, useFetcher } from "react-router";
+import { useLoaderData, useFetcher, redirect } from "react-router";
 import {
   Page,
   Layout,
@@ -42,6 +42,17 @@ import { indexStoreData } from "../services/indexer.server";
 export const loader = async ({ request }) => {
   try {
     const { admin, session } = await authenticate.admin(request);
+
+    // Force re-auth if scopes mismatch
+    const currentScopes = session.scope?.split(',').map(s => s.trim()) || [];
+    const requiredScopes = process.env.SCOPES?.split(',').map(s => s.trim()) || [];
+    const isMissingScopes = requiredScopes.some(s => !currentScopes.includes(s));
+
+    if (isMissingScopes) {
+      console.log(`[AUTH] Scopes out of sync. Current: ${session.scope}. Required: ${process.env.SCOPES}`);
+      const shop = session.shop;
+      return redirect(`/auth?shop=${shop}`);
+    }
 
 
 
