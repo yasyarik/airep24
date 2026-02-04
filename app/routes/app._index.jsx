@@ -137,40 +137,11 @@ export const loader = async ({ request }) => {
     if (!widgetConfig) widgetConfig = await prisma.widgetConfig.create({ data: { shopDomain: session.shop } });
     const activeChatCount = await prisma.chatSession.count({ where: { shopDomain: session.shop, status: 'ACTIVE' } });
 
-    // 5. Check True Theme Status (App Embed)
-    let themeEnabled = false;
-    try {
-      const themesRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes.json`, {
-        headers: { "X-Shopify-Access-Token": session.accessToken }
-      });
-      const themesData = await themesRes.json();
-      const themes = themesData.themes || [];
-      const mainTheme = themes.find(t => t.role === 'main');
-
-      if (mainTheme) {
-        const assetRes = await fetch(`https://${session.shop}/admin/api/2025-10/themes/${mainTheme.id}/assets.json?asset[key]=config/settings_data.json`, {
-          headers: { "X-Shopify-Access-Token": session.accessToken }
-        });
-        const assetData = await assetRes.json();
-        const settingsAsset = assetData.asset;
-
-        if (settingsAsset && settingsAsset.value) {
-          const json = JSON.parse(settingsAsset.value);
-          const blocks = json.current?.blocks || {};
-          themeEnabled = Object.values(blocks).some(block =>
-            (block.type?.includes('airep24-widget') || block.type?.includes('airep24')) && !block.disabled
-          );
-
-          if (!themeEnabled) {
-            console.log("[THEME CHECK] Widget not found in blocks. Types:",
-              Object.values(blocks).map(b => b.type).filter(Boolean).join(', ')
-            );
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("Theme check failed:", e.message);
-    }
+    // 5. Theme App Extension Status
+    // Note: We assume the widget is enabled since it's a theme app extension
+    // that merchants control directly through their theme editor.
+    // We don't have read_themes scope, so we can't verify programmatically.
+    const themeEnabled = true;
 
     return { session, stats, widgetConfig, profiles, activeChatCount, discoveredPresets, themeEnabled };
   } catch (error) {
