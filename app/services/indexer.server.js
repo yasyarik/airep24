@@ -74,6 +74,14 @@ export async function indexStoreData(admin, session, prisma) {
     const { shop, products, collections, articles, pages, orders } = data;
     console.log(`[INDEXER] Fetched: ${products?.nodes?.length || 0} products, ${collections?.nodes?.length || 0} collections, ${orders?.nodes?.length || 0} orders`);
 
+    // Debug: log full data structure
+    console.log('[INDEXER] Full data keys:', Object.keys(data));
+    if (orders) {
+      console.log('[INDEXER] Orders object:', JSON.stringify(orders).substring(0, 500));
+    } else {
+      console.log('[INDEXER] Orders is null/undefined');
+    }
+
     // --- PREPARE ITEMS ---
     const itemsToCreate = [];
 
