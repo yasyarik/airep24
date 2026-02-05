@@ -7,152 +7,120 @@ import prisma from "../db.server";
  */
 export async function indexStoreData(admin, session) {
   const shopDomain = session.shop;
-  console.log(`[INDEXER] Starting full index for ${shopDomain}`);
+  const accessToken = session.accessToken;
+  console.log(`[INDEXER] Starting resilient index for ${shopDomain}`);
+
+  const itemsToCreate = [];
+  const statsUpdate = {
+    products: 0,
+    collections: 0,
+    articles: 0,
+    pages: 0,
+    policies: 0,
+    discounts: 0,
+    orders: 0,
+    themeSections: 0,
+    lastIndexed: new Date(),
+  };
 
   try {
-    // 1. Fetch Comprehensive Store Data using 2026-04 compliant query
-    const fullDataRes = await admin.graphql(
-      `#graphql
-      query getFullStoreData {
-        shop {
-          name
-          myshopifyDomain
-          currencyCode
-          shopPolicies {
-            title
-            body
-            type
-          }
-        }
-        products(first: 100) {
+    // 1. Fetch Products, Collections, Articles, Pages (Basic Scopes)
+    console.log("[INDEXER] Fetching basic store content...");
+    const basicQuery = `#graphql
+      query getBasicData {
+        shop { name myshopifyDomain currencyCode }
+        products(first: 50) {
           nodes {
-            id
-            title
-            description
-            handle
-            variants(first: 1) {
-              nodes { price }
-            }
+            id title description handle
+            variants(first: 1) { nodes { price } }
           }
         }
-        collections(first: 50) {
-          nodes {
-            id
-            title
-            description
-          }
+        collections(first: 20) {
+          nodes { id title description }
         }
-        articles(first: 50) {
-          nodes {
-            id
-            title
-            body
-          }
+        articles(first: 20) {
+          nodes { id title body }
         }
-        pages(first: 50) {
-          nodes {
-            id
-            title
-            body
-          }
-        }
-        orders(first: 100) {
-          nodes {
-            id
-            name
-            totalPriceSet { presentmentMoney { amount currencyCode } }
-            lineItems(first: 10) {
-              nodes { title quantity }
-            }
-          }
-        }
-        discountNodes(first: 50) {
-          nodes {
-            id
-            discount {
-              __typename
-              ... on DiscountCodeBasic { 
-                title 
-                summary 
-                codes(first: 1) { nodes { code } } 
-              }
-              ... on DiscountCodeBxgy { 
-                title 
-                summary 
-                codes(first: 1) { nodes { code } } 
-              }
-              ... on DiscountAutomaticBasic { title summary }
-              ... on DiscountAutomaticBxgy { title summary }
-            }
-          }
-        }
-      }`
-    );
-
-    const responseJson = await fullDataRes.json();
-
-    if (responseJson.errors) {
-      console.error("[INDEXER] GraphQL Errors:", JSON.stringify(responseJson.errors));
-    }
-
-    const data = responseJson.data;
-    if (!data) {
-      return { success: false, error: "Shopify API returned no data" };
-    }
-
-    const { shop, products, collections, articles, pages, orders, discountNodes } = data;
-    console.log(`[INDEXER] Fetched: ${products?.nodes?.length || 0} products, ${collections?.nodes?.length || 0} collections, ${orders?.nodes?.length || 0} orders, ${discountNodes?.nodes?.length || 0} discounts`);
-
-    // --- PREPARE ITEMS ---
-    const itemsToCreate = [];
-
-    // 1. Theme Sections (Limited to 5 for performance)
-    try {
-      const themesRes = await fetch(`https://${shopDomain}/admin/api/2026-04/themes.json`, {
-        headers: { "X-Shopify-Access-Token": session.accessToken }
-      });
-      const themesData = await themesRes.json();
-      const mainTheme = (themesData.themes || []).find(t => t.role === 'main');
-
-      if (mainTheme) {
-        const assetsRes = await fetch(`https://${shopDomain}/admin/api/2026-04/themes/${mainTheme.id}/assets.json`, {
-          headers: { "X-Shopify-Access-Token": session.accessToken }
-        });
-        const assetsData = await assetsRes.json();
-        const assetList = assetsData.assets || [];
-        const templateAssets = assetList.filter(a => a.key.startsWith('templates/') && a.key.endsWith('.json'));
-
-        for (const assetRef of templateAssets.slice(0, 5)) {
-          const assetRes = await fetch(`https://${shopDomain}/admin/api/2026-04/themes/${mainTheme.id}/assets.json?asset[key]=${assetRef.key}`, {
-            headers: { "X-Shopify-Access-Token": session.accessToken }
-          });
-          const singleAssetData = await assetRes.json();
-          if (singleAssetData.asset?.value) {
-            itemsToCreate.push({
-              shopDomain,
-              type: 'theme_section',
-              title: `Theme: ${assetRef.key}`,
-              content: `Front-end Section Data (${assetRef.key}): ${singleAssetData.asset.value.substring(0, 3000)}`
-            });
-          }
+        pages(first: 20) {
+          nodes { id title body }
         }
       }
+    `;
+
+    try {
+      const basicRes = await admin.graphql(basicQuery);
+      const basicJson = await basicRes.json();
+      const bData = basicJson.data;
+
+      if (bData) {
+        if (bData.shop) {
+          itemsToCreate.push({
+            shopDomain,
+            type: 'shop_metadata',
+            title: 'General Store Info',
+            content: `Store Name: ${bData.shop.name}. Domain: ${bData.shop.myshopifyDomain}. Currency: ${bData.shop.currencyCode}.`
+          });
+        }
+
+        bData.products?.nodes?.forEach(p => {
+          statsUpdate.products++;
+          itemsToCreate.push({
+            shopDomain,
+            type: 'product',
+            externalId: p.id,
+            title: p.title,
+            content: `Product: ${p.title}. Description: ${p.description || ''}. Price: ${p.variants.nodes[0]?.price || 'N/A'}. URL: /products/${p.handle}`
+          });
+        });
+
+        bData.collections?.nodes?.forEach(c => {
+          statsUpdate.collections++;
+          itemsToCreate.push({
+            shopDomain,
+            type: 'collection',
+            externalId: c.id,
+            title: c.title,
+            content: `Collection: ${c.title}. Description: ${c.description || ''}`
+          });
+        });
+
+        bData.articles?.nodes?.forEach(a => {
+          statsUpdate.articles++;
+          itemsToCreate.push({
+            shopDomain,
+            type: 'article',
+            externalId: a.id,
+            title: a.title,
+            content: `Blog Post: ${a.title}. Content: ${a.body?.replace(/<[^>]*>/g, '') || ''}`
+          });
+        });
+
+        bData.pages?.nodes?.forEach(p => {
+          statsUpdate.pages++;
+          itemsToCreate.push({
+            shopDomain,
+            type: 'page',
+            externalId: p.id,
+            title: p.title,
+            content: `Page: ${p.title}. Content: ${p.body?.replace(/<[^>]*>/g, '') || ''}`
+          });
+        });
+      }
     } catch (e) {
-      console.warn("[INDEXER] Theme extraction skipped:", e.message);
+      console.warn("[INDEXER] Basic data fetch failed:", e.message);
     }
 
-    // 2. Shop Metadata & Policies
-    if (shop) {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'shop_metadata',
-        title: 'General Store Info',
-        content: `Store Name: ${shop.name}. Domain: ${shop.myshopifyDomain}. Currency: ${shop.currencyCode}.`
-      });
-
-      if (shop.shopPolicies && shop.shopPolicies.length > 0) {
-        shop.shopPolicies.forEach(policy => {
+    // 2. Fetch Policies (Try multiple ways)
+    console.log("[INDEXER] Attempting to fetch policies...");
+    try {
+      const policyRes = await admin.graphql(`#graphql
+        query { shop { shopPolicies { title body type } } }
+      `);
+      const pJson = await policyRes.json();
+      if (pJson.data?.shop?.shopPolicies) {
+        pJson.data.shop.shopPolicies.forEach(policy => {
           if (policy.body) {
+            statsUpdate.policies++;
             itemsToCreate.push({
               shopDomain,
               type: 'policy',
@@ -163,82 +131,102 @@ export async function indexStoreData(admin, session) {
           }
         });
       }
+    } catch (e) {
+      console.warn("[INDEXER] Policy fetch failed:", e.message);
     }
 
-    // 3. Products
-    products?.nodes?.forEach(p => {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'product',
-        externalId: p.id,
-        title: p.title,
-        content: `Product: ${p.title}. Description: ${p.description || ''}. Price: ${p.variants.nodes[0]?.price || 'N/A'}. URL: /products/${p.handle}`
-      });
-    });
+    // 3. Fetch Orders (GraphQL with REST Fallback for old orders)
+    console.log("[INDEXER] Fetching orders...");
+    let orderNodes = [];
+    try {
+      const orderRes = await admin.graphql(`#graphql
+        query { orders(first: 50) { nodes { id name totalPriceSet { presentmentMoney { amount currencyCode } } lineItems(first: 5) { nodes { title quantity } } } } }
+      `);
+      const oJson = await orderRes.json();
+      orderNodes = oJson.data?.orders?.nodes || [];
+    } catch (e) {
+      console.warn("[INDEXER] GraphQL Orders failed:", e.message);
+    }
 
-    // 4. Collections
-    collections?.nodes?.forEach(c => {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'collection',
-        externalId: c.id,
-        title: c.title,
-        content: `Collection: ${c.title}. Description: ${c.description || ''}`
+    // Fallback to REST for orders (especially old ones) if GraphQL returned 0 but we know they exist
+    if (orderNodes.length === 0) {
+      console.log("[INDEXER] GraphQL returned 0 orders, trying REST fallback...");
+      try {
+        const restRes = await fetch(`https://${shopDomain}/admin/api/2026-04/orders.json?status=any&limit=50`, {
+          headers: { "X-Shopify-Access-Token": accessToken }
+        });
+        const restData = await restRes.json();
+        const restOrders = restData.orders || [];
+        restOrders.forEach(o => {
+          const itemsStr = o.line_items.map(li => `${li.quantity}x ${li.title}`).join(', ');
+          itemsToCreate.push({
+            shopDomain,
+            type: 'order',
+            externalId: String(o.id),
+            title: `Order ${o.name}`,
+            content: `Order: ${o.name}. Total: ${o.total_price} ${o.currency}. Items: ${itemsStr}`
+          });
+          statsUpdate.orders++;
+        });
+      } catch (e) {
+        console.warn("[INDEXER] REST Orders fallback failed:", e.message);
+      }
+    } else {
+      orderNodes.forEach(o => {
+        statsUpdate.orders++;
+        const itemsStr = o.lineItems.nodes.map(li => `${li.quantity}x ${li.title}`).join(', ');
+        itemsToCreate.push({
+          shopDomain,
+          type: 'order',
+          externalId: o.id,
+          title: `Order ${o.name}`,
+          content: `Order: ${o.name}. Total: ${o.totalPriceSet.presentmentMoney?.amount} ${o.totalPriceSet.presentmentMoney?.currencyCode}. Items: ${itemsStr}`
+        });
       });
-    });
+    }
 
-    // 5. Articles & Pages
-    articles?.nodes?.forEach(a => {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'article',
-        externalId: a.id,
-        title: a.title,
-        content: `Blog Post: ${a.title}. Content: ${a.body?.replace(/<[^>]*>/g, '') || ''}`
+    // 4. Fetch Discounts
+    console.log("[INDEXER] Fetching discounts...");
+    try {
+      const discRes = await admin.graphql(`#graphql
+        query { discountNodes(first: 20) { nodes { id discount { ... on DiscountCodeBasic { title summary codes(first:1){nodes{code}} } ... on DiscountAutomaticBasic { title summary } } } } }
+      `);
+      const dJson = await discRes.json();
+      dJson.data?.discountNodes?.nodes?.forEach(node => {
+        const d = node.discount;
+        if (!d) return;
+        statsUpdate.discounts++;
+        const title = d.title || 'Discount';
+        const code = d.codes?.nodes?.[0]?.code || '';
+        itemsToCreate.push({
+          shopDomain,
+          type: 'discount',
+          externalId: node.id,
+          title: code ? `${title} (${code})` : title,
+          content: `Discount: ${title}. ${code ? `Code: ${code}. ` : ''}Summary: ${d.summary || ''}`
+        });
       });
-    });
-
-    pages?.nodes?.forEach(p => {
-      itemsToCreate.push({
-        shopDomain,
-        type: 'page',
-        externalId: p.id,
-        title: p.title,
-        content: `Page: ${p.title}. Content: ${p.body?.replace(/<[^>]*>/g, '') || ''}`
-      });
-    });
-
-    // 6. Orders
-    orders?.nodes?.forEach(o => {
-      const itemsStr = o.lineItems.nodes.map(li => `${li.quantity}x ${li.title}`).join(', ');
-      itemsToCreate.push({
-        shopDomain,
-        type: 'order',
-        externalId: o.id,
-        title: `Order ${o.name}`,
-        content: `Order: ${o.name}. Total: ${o.totalPriceSet.presentmentMoney?.amount || '0'} ${o.totalPriceSet.presentmentMoney?.currencyCode || ''}. Items: ${itemsStr}`
-      });
-    });
-
-    // 7. Discounts
-    discountNodes?.nodes?.forEach(node => {
-      const d = node.discount;
-      if (!d) return;
-      const title = d.title || 'Discount';
-      const summary = d.summary || '';
-      let code = '';
-      if (d.codes && d.codes.nodes.length > 0) code = d.codes.nodes[0].code;
-
-      itemsToCreate.push({
-        shopDomain,
-        type: 'discount',
-        externalId: node.id,
-        title: code ? `${title} (${code})` : title,
-        content: `Discount: ${title}. ${code ? `Code: ${code}. ` : ''}Summary: ${summary}`
-      });
-    });
+    } catch (e) {
+      // Fallback to price rules if discountNodes fails
+      try {
+        const prRes = await fetch(`https://${shopDomain}/admin/api/2026-04/price_rules.json`, {
+          headers: { "X-Shopify-Access-Token": accessToken }
+        });
+        const prData = await prRes.json();
+        prData.price_rules?.forEach(pr => {
+          statsUpdate.discounts++;
+          itemsToCreate.push({
+            shopDomain, type: 'discount', externalId: String(pr.id), title: pr.title,
+            content: `Discount/Price Rule: ${pr.title}. Value: ${pr.value_type === 'percentage' ? pr.value + '%' : pr.value}.`
+          });
+        });
+      } catch (ee) {
+        console.warn("[INDEXER] Discounts totally failed:", ee.message);
+      }
+    }
 
     // --- SAVE TO DATABASE ---
+    console.log(`[INDEXER] Final count to save: ${itemsToCreate.length}`);
     await prisma.knowledgeItem.deleteMany({ where: { shopDomain } });
 
     const chunkSize = 50;
@@ -251,35 +239,14 @@ export async function indexStoreData(admin, session) {
     // Update Dashboard Stats
     await prisma.storeStats.upsert({
       where: { shopDomain },
-      create: {
-        shopDomain,
-        products: products?.nodes?.length || 0,
-        collections: collections?.nodes?.length || 0,
-        articles: articles?.nodes?.length || 0,
-        pages: pages?.nodes?.length || 0,
-        policies: itemsToCreate.filter(i => i.type === 'policy').length,
-        discounts: discountNodes?.nodes?.length || 0,
-        orders: orders?.nodes?.length || 0,
-        themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
-        lastIndexed: new Date()
-      },
-      update: {
-        products: products?.nodes?.length || 0,
-        collections: collections?.nodes?.length || 0,
-        articles: articles?.nodes?.length || 0,
-        pages: pages?.nodes?.length || 0,
-        policies: itemsToCreate.filter(i => i.type === 'policy').length,
-        discounts: discountNodes?.nodes?.length || 0,
-        orders: orders?.nodes?.length || 0,
-        themeSections: itemsToCreate.filter(i => i.type === 'theme_section').length,
-        lastIndexed: new Date()
-      }
+      create: { shopDomain, ...statsUpdate },
+      update: statsUpdate
     });
 
     return { success: true, count: itemsToCreate.length };
 
   } catch (error) {
-    console.error(`[INDEXER] Critical Error:`, error);
+    console.error(`[INDEXER] Fatal Error:`, error);
     return { success: false, error: error.message };
   }
 }
