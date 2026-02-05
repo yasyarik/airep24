@@ -45,7 +45,16 @@ export const loader = async ({ request }) => {
 
     // Check for missing scopes
     const currentScopes = session.scope?.split(',').map(s => s.trim()) || [];
-    const requiredScopes = process.env.SCOPES?.split(',').map(s => s.trim()) || [];
+    const requiredScopes = [
+      "write_products",
+      "read_products",
+      "read_orders",
+      "read_discounts",
+      "read_legal_policies",
+      "read_content",
+      "read_themes",
+      "read_metaobjects"
+    ];
     const isMissingScopes = requiredScopes.some(s => !currentScopes.includes(s));
 
     if (isMissingScopes) {
