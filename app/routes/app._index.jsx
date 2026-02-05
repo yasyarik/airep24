@@ -690,12 +690,17 @@ export default function Index() {
                                     <Select
                                       label="Initiative Level"
                                       options={[
-                                        { label: 'Proactive (Active Consultant)', value: 'high' },
-                                        { label: 'Reactive (Librarian)', value: 'low' }
+                                        { label: 'Reactive (Librarian)', value: 'low' },
+                                        { label: 'Balanced (Supportive)', value: 'medium' },
+                                        { label: 'Proactive (Active Consultant)', value: 'high' }
                                       ]}
                                       value={pInitiative}
                                       onChange={setPInitiative}
-                                      helpText={pInitiative === 'high' ? "Ends answers with follow-up questions." : "Only answers what is asked."}
+                                      helpText={
+                                        pInitiative === 'high' ? "Always ends with a follow-up question." :
+                                          pInitiative === 'medium' ? "Suggests relevant next steps occasionally." :
+                                            "Only answers specific customer questions."
+                                      }
                                     />
                                   </div>
                                   <div style={{ flex: 1 }}>
@@ -703,11 +708,16 @@ export default function Index() {
                                       label="Response Length"
                                       options={[
                                         { label: 'Brief (Mobile First)', value: 'short' },
-                                        { label: 'Balanced (Standard)', value: 'balanced' }
+                                        { label: 'Balanced (Standard)', value: 'balanced' },
+                                        { label: 'Detailed (In-depth)', value: 'long' }
                                       ]}
                                       value={pVerbosity}
                                       onChange={setPVerbosity}
-                                      helpText="Brief keeps replies under 3 sentences."
+                                      helpText={
+                                        pVerbosity === 'short' ? "Keeps replies under 2-3 sentences." :
+                                          pVerbosity === 'balanced' ? "Standard paragraph length." :
+                                            "Provides comprehensive, detailed explanations."
+                                      }
                                     />
                                   </div>
                                 </InlineStack>
@@ -717,10 +727,16 @@ export default function Index() {
                                       label="Selling Focus"
                                       options={[
                                         { label: 'Benefit-Driven (Emotional)', value: 'benefit' },
-                                        { label: 'Tech-Heavy (Specs)', value: 'tech' }
+                                        { label: 'Tech-Heavy (Specs)', value: 'tech' },
+                                        { label: 'Urgency-Driven (FOMO)', value: 'fomo' }
                                       ]}
                                       value={pStyle}
                                       onChange={setPStyle}
+                                      helpText={
+                                        pStyle === 'fomo' ? "Highlights scarcity and limited offers." :
+                                          pStyle === 'tech' ? "Focuses on technical specifications." :
+                                            "Focuses on how the product improves life."
+                                      }
                                     />
                                   </div>
                                   <div style={{ flex: 1 }}>
@@ -728,11 +744,16 @@ export default function Index() {
                                       label="Ethics & Closing"
                                       options={[
                                         { label: 'Trusted Advisor (Honest)', value: 'advisor' },
+                                        { label: 'Balanced Persuasion', value: 'medium_sales' },
                                         { label: 'Salesman (Closing Focus)', value: 'sales' }
                                       ]}
                                       value={pEthics}
                                       onChange={setPEthics}
-                                      helpText={pEthics === 'sales' ? "Uses FOMO & Social Proof to close." : "Prioritizes customer trust over quick sale."}
+                                      helpText={
+                                        pEthics === 'sales' ? "Uses strong closing and FOMO." :
+                                          pEthics === 'medium_sales' ? "Encourages purchase while remaining honest." :
+                                            "Prioritizes long-term trust over a quick sale."
+                                      }
                                     />
                                   </div>
                                 </InlineStack>
