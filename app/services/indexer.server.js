@@ -155,8 +155,10 @@ export async function indexStoreData(admin, session) {
         const restRes = await fetch(`https://${shopDomain}/admin/api/2026-04/orders.json?status=any&limit=50`, {
           headers: { "X-Shopify-Access-Token": accessToken }
         });
+        console.log(`[INDEXER] REST Orders Status: ${restRes.status}`);
         const restData = await restRes.json();
         const restOrders = restData.orders || [];
+        console.log(`[INDEXER] REST Fallback found ${restOrders.length} orders`);
         restOrders.forEach(o => {
           const itemsStr = o.line_items.map(li => `${li.quantity}x ${li.title}`).join(', ');
           itemsToCreate.push({
@@ -172,6 +174,7 @@ export async function indexStoreData(admin, session) {
         console.warn("[INDEXER] REST Orders fallback failed:", e.message);
       }
     } else {
+      console.log(`[INDEXER] GraphQL found ${orderNodes.length} orders`);
       orderNodes.forEach(o => {
         statsUpdate.orders++;
         const itemsStr = o.lineItems.nodes.map(li => `${li.quantity}x ${li.title}`).join(', ');
@@ -192,7 +195,10 @@ export async function indexStoreData(admin, session) {
         query { discountNodes(first: 20) { nodes { id discount { ... on DiscountCodeBasic { title summary codes(first:1){nodes{code}} } ... on DiscountAutomaticBasic { title summary } } } } }
       `);
       const dJson = await discRes.json();
-      dJson.data?.discountNodes?.nodes?.forEach(node => {
+      const dNodes = dJson.data?.discountNodes?.nodes || [];
+      console.log(`[INDEXER] Discount GraphQL found ${dNodes.length} nodes`);
+
+      dNodes.forEach(node => {
         const d = node.discount;
         if (!d) return;
         statsUpdate.discounts++;
@@ -206,14 +212,19 @@ export async function indexStoreData(admin, session) {
           content: `Discount: ${title}. ${code ? `Code: ${code}. ` : ''}Summary: ${d.summary || ''}`
         });
       });
+
+      if (dNodes.length === 0) throw new Error("No discounts via GraphQL");
     } catch (e) {
-      // Fallback to price rules if discountNodes fails
+      console.log("[INDEXER] Trying REST fallback for discounts (price rules)...");
       try {
         const prRes = await fetch(`https://${shopDomain}/admin/api/2026-04/price_rules.json`, {
           headers: { "X-Shopify-Access-Token": accessToken }
         });
+        console.log(`[INDEXER] REST PriceRules Status: ${prRes.status}`);
         const prData = await prRes.json();
-        prData.price_rules?.forEach(pr => {
+        const rules = prData.price_rules || [];
+        console.log(`[INDEXER] REST Fallback found ${rules.length} price rules`);
+        rules.forEach(pr => {
           statsUpdate.discounts++;
           itemsToCreate.push({
             shopDomain, type: 'discount', externalId: String(pr.id), title: pr.title,
