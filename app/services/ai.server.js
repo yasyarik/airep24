@@ -399,7 +399,7 @@ export async function generateChatResponse(history, systemPrompt, tools = []) {
 
     try {
         const ai = new GoogleGenAI({ apiKey });
-        const modelName = "gemini-1.5-flash"; // Fast and capable
+        const modelName = "gemini-2.5-flash"; // Fast and capable
 
         // Convert history to Gemini format
         // history: [{ role: 'user'|'assistant', content: 'text' }]
