@@ -2,6 +2,7 @@ import { Outlet, useLoaderData, useRouteError } from "react-router";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 import { AppProvider } from "@shopify/shopify-app-react-router/react";
 import { AppProvider as PolarisAppProvider } from "@shopify/polaris";
+import { useEffect } from "react";
 import enTranslations from "@shopify/polaris/locales/en.json";
 import polarisStyles from "@shopify/polaris/build/esm/styles.css?url";
 
@@ -22,12 +23,36 @@ export const loader = async ({ request }) => {
 
   return {
     apiKey: process.env.SHOPIFY_API_KEY || "",
-    activeChatCount
+    activeChatCount,
+    shop: session.shop
   };
 };
 
 export default function App() {
-  const { apiKey, activeChatCount } = useLoaderData();
+  const { apiKey, activeChatCount, shop } = useLoaderData();
+
+  useEffect(() => {
+    // 1. Configure Anna for Admin
+    window.AnnaConfig = {
+      apiUrl: "https://api.airep24.com/api/chat",
+      assetsBase: "https://api.airep24.com",
+      statusUrl: "https://api.airep24.com/api/chat/status",
+      historyUrl: "https://api.airep24.com/api/chat/history",
+      branding: "Anna Admin",
+      shop: shop
+    };
+
+    // 2. Inject Script
+    const script = document.createElement("script");
+    script.src = "https://api.airep24.com/assistant.js";
+    script.async = true;
+    document.body.appendChild(script);
+
+    return () => {
+      // Cleanup if needed (Anna usually handles her own removal if required,
+      // but here we stay simple as the app layout is persistent)
+    };
+  }, [shop]);
 
   return (
     <AppProvider embedded apiKey={apiKey}>

@@ -146,6 +146,9 @@ model WidgetConfig {
   position        String   @default("bottom-right") // bottom-right, bottom-left
   minimizedStyle  String   @default("icon") // icon, bubble, text
   updatedAt       DateTime @updatedAt
+  telegramBotToken String?
+  telegramChatId String?
+  additionalContext String?
 }
 
 model CharacterProfile {
@@ -170,6 +173,9 @@ model CharacterProfile {
   instructions    String   @default("You are a helpful and friendly shopping assistant for our Shopify store.")
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  telegramBotToken String?
+  telegramChatId String?
+  additionalContext String?
 
   assets          CharacterAsset[]
 

@@ -451,3 +451,54 @@ export async function generateChatResponse(history, systemPrompt, tools = []) {
         throw error;
     }
 }
+
+export async function* generateChatStream(history, systemPrompt, tools = []) {
+    console.log("=== Generating Chat Stream ===");
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) throw new Error("API Key missing");
+
+    try {
+        const ai = new GoogleGenAI({ apiKey });
+        const model = ai.getGenerativeModel({ 
+            model: "gemini-2.5-flash",
+            systemInstruction: systemPrompt
+        });
+
+        const contents = history.map(h => ({
+            role: h.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: h.text || h.content }]
+        }));
+
+        const chat = model.startChat({
+            history: contents.slice(0, -1),
+            generationConfig: { maxOutputTokens: 1000 }
+        });
+
+        if (tools && tools.length > 0) {
+           // Tools in Gemini SDK 2.0+ are passed to getGenerativeModel, but let's check current version.
+           // If using startChat with tools, it requires specific handling.
+           // For now, let's stick to the simplest streaming text if possible, 
+           // but since we want tools, we might need a non-chat stream call.
+        }
+
+        const lastMessage = contents[contents.length - 1].parts[0].text;
+        const result = await model.generateContentStream({
+            contents: contents,
+            tools: tools.length > 0 ? [{ functionDeclarations: tools }] : []
+        });
+
+        for await (const chunk of result.stream) {
+            const text = chunk.text();
+            if (text) yield text;
+            
+            // Handle function calls in stream if any
+            const calls = chunk.functionCalls();
+            if (calls && calls.length > 0) {
+                yield { functionCalls: calls };
+            }
+        }
+    } catch (error) {
+        console.error("Stream Generation Error:", error);
+        throw error;
+    }
+}

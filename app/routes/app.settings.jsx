@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import React, { useState } from "react";
 import {
     Page,
     Layout,
@@ -14,21 +14,70 @@ import {
     Icon,
 } from "@shopify/polaris";
 import { SaveIcon, ChatIcon, SettingsIcon } from "@shopify/polaris-icons";
+import { useLoaderData, useActionData, useSubmit, useNavigation } from "react-router";
+import { authenticate } from "../shopify.server";
+import prisma from "../db.server";
+
+export const loader = async ({ request }) => {
+    const { session } = await authenticate.admin(request);
+    const shop = session.shop;
+
+    const profile = await prisma.characterProfile.findFirst({
+        where: { shopDomain: shop, isActive: true },
+    });
+
+    return { profile: profile || {} };
+};
+
+export const action = async ({ request }) => {
+    const { session } = await authenticate.admin(request);
+    const shop = session.shop;
+    const formData = await request.formData();
+    const telegramBotToken = formData.get("telegramBotToken");
+    const telegramChatId = formData.get("telegramChatId");
+    const additionalContext = formData.get("additionalContext");
+
+    await prisma.characterProfile.updateMany({
+        where: { shopDomain: shop, isActive: true },
+        data: {
+            telegramBotToken,
+            telegramChatId,
+            additionalContext,
+        },
+    });
+
+    return { success: true };
+};
 
 export default function Settings() {
-    const [botToken, setBotToken] = useState("");
-    const [chatId, setChatId] = useState("");
-    const [kbExtra, setKbExtra] = useState("");
+    const { profile } = useLoaderData();
+    const actionData = useActionData();
+    const navigation = useNavigation();
+    const submit = useSubmit();
+    const isLoading = navigation.state !== "idle";
 
-    const handleSave = useCallback(() => {
-        alert("Settings saved successfully!");
-    }, []);
+    const [botToken, setBotToken] = useState(profile.telegramBotToken || "");
+    const [chatId, setChatId] = useState(profile.telegramChatId || "");
+    const [kbExtra, setKbExtra] = useState(profile.additionalContext || "");
+
+    const handleSave = () => {
+        const formData = new FormData();
+        formData.append("telegramBotToken", botToken);
+        formData.append("telegramChatId", chatId);
+        formData.append("additionalContext", kbExtra);
+        submit(formData, { method: "post" });
+    };
 
     return (
         <Page title="Advanced Settings" backAction={{ content: "Dashboard", url: "/app" }}>
             <BlockStack gap="500">
+                {actionData?.success && (
+                    <Banner tone="success" onDismiss={() => {}}>
+                        <p>Settings saved successfully!</p>
+                    </Banner>
+                )}
+                
                 <Layout>
-                    {/* Telegram Integration */}
                     <Layout.Section>
                         <Card>
                             <BlockStack gap="400">
@@ -38,7 +87,7 @@ export default function Settings() {
                                             <Icon source={ChatIcon} tone="success" />
                                             <Text variant="headingMd" as="h2">Telegram Notifications</Text>
                                         </InlineStack>
-                                        <Text as="p" tone="subdued">Receive alerts when a customer needs manual help.</Text>
+                                        <Text as="p" tone="subdued">Receive alerts when a customer starts a new chat.</Text>
                                     </BlockStack>
                                 </InlineStack>
 
@@ -53,7 +102,7 @@ export default function Settings() {
                                         autoComplete="off"
                                         helpText={
                                             <Text as="span" tone="subdued">
-                                                Create a bot via <a href="https://t.me/botfather" target="_blank" style={{ color: '#008060' }}>@BotFather</a> to get your token.
+                                                Create a bot via <a href="https://t.me/botfather" target="_blank" style={{ color: '#008060' }}>@BotFather</a>.
                                             </Text>
                                         }
                                     />
@@ -63,17 +112,13 @@ export default function Settings() {
                                         onChange={setChatId}
                                         placeholder="987654321"
                                         autoComplete="off"
-                                        helpText="Your personal or group chat ID to receive messages."
+                                        helpText="Your personal or group chat ID."
                                     />
-                                    <InlineStack align="end">
-                                        <Button onClick={() => alert("Test message sent!")}>Send Test Message</Button>
-                                    </InlineStack>
                                 </BlockStack>
                             </BlockStack>
                         </Card>
                     </Layout.Section>
 
-                    {/* AI Knowledge Base Expansion */}
                     <Layout.Section>
                         <Card>
                             <BlockStack gap="400">
@@ -82,7 +127,7 @@ export default function Settings() {
                                     <Text variant="headingMd" as="h2">Extra Training Data</Text>
                                 </InlineStack>
                                 <Text as="p" tone="subdued">
-                                    The AI automatically learns from your catalog. Use this field for unique rules, brand story, or temporary updates.
+                                    Add unique rules, brand story, or business info that isnt in your shopify catalog.
                                 </Text>
 
                                 <TextField
@@ -90,24 +135,23 @@ export default function Settings() {
                                     value={kbExtra}
                                     onChange={setKbExtra}
                                     multiline={6}
-                                    placeholder="Example: We offer free world-wide shipping on orders over $100. Our warehouse is closed on weekends."
+                                    placeholder="Example: We ship worldwide. Our physical store is in London."
                                     autoComplete="off"
                                 />
-
-                                <Banner tone="info" hideLinks>
-                                    <Text as="p">
-                                        Manual refresh on Dashboard will update the brain immediately with these new settings.
-                                    </Text>
-                                </Banner>
                             </BlockStack>
                         </Card>
                     </Layout.Section>
 
-                    {/* Action Footer */}
                     <Layout.Section>
                         <Box paddingBlockEnd="500">
                             <InlineStack align="end">
-                                <Button variant="primary" icon={SaveIcon} onClick={handleSave} size="large">
+                                <Button 
+                                    variant="primary" 
+                                    icon={SaveIcon} 
+                                    onClick={handleSave} 
+                                    size="large"
+                                    loading={isLoading}
+                                >
                                     Save All Settings
                                 </Button>
                             </InlineStack>
